@@ -1,10 +1,10 @@
 /*
 ***********************************************************
 *** Jetpack name: LangLadder ***
-*** Version: 0.0.4 ***
+*** Version: 0.0.6 ***
 *** Authors:Erik Larson
 *** Contact: planeterik@gmail.com ***
-*** Last changes: 20/01/2010 ***
+*** Last changes: 28/01/2010 ***
 ***********************************************************
 **TODOS
 *Reorganize CSS trees and eliminate unused code blocks
@@ -54,8 +54,13 @@ function Flashcard(forword, definition, sentence, url){
 	this.history=this.history || [];
 }
 
+/**
+* Object to get a lot of performance statistics.  Will be pruned and refined later
+*
+*/
 function FlashcardPerformance(fc){
 	var now=new Date();
+	console.log("flashcard perf was called");
 	this.hasStudied=fc.history.length>0;
 	this.lifetimeStats=statsSession(fc,"1/1/1900");
 	this.onemonthStats=statsSession(fc,getDaysAgo(30));
@@ -71,72 +76,6 @@ function FlashcardPerformance(fc){
 	this.numCardsInRow=numRightInRow(fc,"1/1/1900");
 }
 
-function generateScore(fc){
-	var score=1;
-	var perf=new FlashcardPerformance(fc);
-	if(perf.numCardsInRow<=1){
-		score=6;
-	}else if(perf.numCardsInRow<=4){
-		score=4;
-	}else if(perf.numCardInRow<=8){
-		score=2;
-	}else if(perf.numCardInRow<=16){
-		score=1;
-	}else{ 
-		score=0.5;
-	}
-	
-	if(this.lastDayStudied==false){
-		
-	}else if(this.lastDayStudied>10){
-		score*=2;
-	}else if(this.lastDayStudied>4){
-		score*=1.5;
-	}
-	
-	return score;
-}
-
-function FCScores(){
-	this.scores={};
-	this.scoremin={};
-	this.totalScore=0;
-	for ( var elem in flashcards){
-		this.scoremin[elem]=this.totalScore;
-		scores[elem]=generateScore(flashcards[elem]);
-		this.totalScore+=scores[elem];
-	}
-	/*for(var elem in flashcards){
-		this.fcpropbs[elem]=fcscores[elem]/totalScore;
-	}*/
-}
-
-function adjustAddFCScore(fc,fcscore){
-	var score=generateScore(fc);;
-	if(score[fc.forword] != nothing){
-		fcscore.totalScore=fcscore.totalScore-fcscore.scores[fc.forword];
-	}
-	fcscore.score[fc.forword]+=score;
-	this.totalScore=0;
-	for ( var elem in flashcards){
-		this.scoremin[elem]=this.totalScore;
-		this.totalScore+=scores[elem];
-	}
-}
-
-function getNextCard(){
-	var randNum=getRandomNumber(fcScores.totalScore);
-	var fcard;
-	for(var elem in flashcards){
-		if(randNum>=fcScores.scoremin[elem] && randNum < (fcScores.scoremin[elem]+fcScores.scores[elem])){
-			fcard=flashcards[elem];
-			break;
-		}
-	}
-	return fcard;
-}
-
-var fcScores=new FCScores();
 
 
 var gSlider=0; //global variable to point to the slider context
@@ -154,13 +93,11 @@ var flashcards = jetpack.storage.simple.flashcards;
 jetpack.storage.simple.settings = jetpack.storage.simple.settings || {};
 var settings = jetpack.storage.simple.settings;
 
-jetpack.storage.simple.fcqueue = jetpack.storage.simple.fcqueue || [];
-var fcqueue = jetpack.storage.simple.fcqueue;
-
 jetpack.storage.simple.savedsites = jetpack.storage.simple.savedsites || [];
 var savedsites = jetpack.storage.simple.savedsites;
 
-
+var fcScores=new FCScores();
+var currentCard;
 
 // If there are no languages set, the defaul speak English and learning Spanish is used
 if(settings["learninglang"]==undefined){
@@ -170,10 +107,8 @@ if(settings["nativelang"]==undefined){
 settings["nativelang"]="en";
 }
 
-
 /**
 * Tracks which page the user is reading
-* 
 */
 jetpack.tabs.onFocus(function(event){
 	console.log(this.url);
@@ -192,6 +127,94 @@ jetpack.tabs.onReady(function(event){
 		highlightWord=false;
 	}
 });
+
+
+/**
+* Generates scores to figure out the frequency words are shown
+*
+*/
+function generateScore(fc){
+	var score=1;
+	var perf=new FlashcardPerformance(fc);
+	if(perf.numCardsInRow<=1){
+		score=6;
+	}else if(perf.numCardsInRow<=4){
+		score=4;
+	}else if(perf.numCardInRow<=8){
+		score=2;
+	}else if(perf.numCardInRow<=16){
+		score=1;
+	}else{ 
+		score=0.5;
+	}
+	
+	if(this.lastDayStudied!=false){
+		if(this.lastDayStudied>10){
+			score*=2;
+		}else if(this.lastDayStudied>4){
+			score*=1.5;
+		}
+	}
+	console.log("score is "+score);
+	return score;
+}
+
+/**
+* 
+*
+*/
+function FCScores(){
+	this.scores={};
+	this.scoremin={};
+	this.totalScore=0;
+	for ( var elem in flashcards ){
+		console.log(flashcards[elem]);
+		this.scoremin[elem]=this.totalScore;
+		this.scores[elem]=generateScore(flashcards[elem]);
+		this.totalScore+=this.scores[elem];
+	}
+	
+	console.log(this);
+	/*for(var elem in flashcards){
+		this.fcpropbs[elem]=fcscores[elem]/totalScore;
+	}*/
+}
+
+/**
+* 
+*
+*/
+function adjustAddFCScore(fc,fcscore){
+	var score=generateScore(fc);;
+	if(score[fc.forword] != undefined){
+		fcscore.totalScore=fcscore.totalScore-fcscore.scores[fc.forword];
+	}
+	fcscore.scores[fc.forword]+=score;
+	fcscore.totalScore=0;
+	for ( var elem in flashcards){
+		fcscore.scoremin[elem]=fcscore.totalScore;
+		fcscore.totalScore+=fcscore.scores[elem];
+	}
+}
+
+/**
+* 
+*
+*/
+function getNextCard(){
+	var randNum=getRandomNumber(fcScores.totalScore);
+	console.log("Random is "+randNum);
+	var fcard;
+	for(var elem in flashcards){
+		if(randNum>=fcScores.scoremin[elem] && randNum < (fcScores.scoremin[elem]+fcScores.scores[elem])){
+			fcard=flashcards[elem];
+			break;
+		}
+	}
+	
+	return fcard;
+}
+
 
 /**
 * Search a body of html text for a search term.  If the term is found, a 
@@ -343,6 +366,7 @@ function numRightInRow(fc, lastBegin){
 					break;
 			 }
 	 }
+	
 	 return numRight;
 }
 
@@ -362,6 +386,20 @@ function statsSession(fc, lastBegin){
 
 	return {numReps: numRepititions,
 	numCorrect: numCorrect};
+}
+
+/**
+* Returns the percentage correct in the last n number of iterations seen
+*/
+function percCorrectByN(fc, n){
+	var numCorrect=0;
+	for(i=0;i<n;i++){
+		if(fc.history[fc.history.length-1-i]){
+			numCorrect++;
+		}
+	}
+	
+	return numCorrect/n;
 }
 
 /**
@@ -440,45 +478,24 @@ function translateString(word, sourcelang, destlang, sentence){
 	var translation;
 	console.log(word+sourcelang+destlang);
 	$.getJSON("http://ajax.googleapis.com/ajax/services/language/translate?v=1.0&q=" + word	 +"&langpair="+sourcelang+"%7C"+destlang,
-	 function(data){
+	function(data){
 		translation=data.responseData.translatedText.trim().toLowerCase();
 		flashcards[word]=new Flashcard(word,translation,sentence,currentURL);
 		console.log(flashcards);
 		showJetpackNote(word+"="+translation+"\r"+sentence,"Word Added");
 		refreshVocabwords();
 	});
- }
+}
  
 /**
 * Jetpack notifications
 */
 function showJetpackNote(body, title){
-jetpack.notifications.show({
-		  title: title,
-		  body: body,
-		  icon: "http://langladder.com/img/ladder.gif"
-	  });
-}
-
-
-
-/**
-* 
-* 
-*/
-function arrangeQueue(){
-	var fcqueuetemp=[];
-	fcqueue=[];
-	for( var key in flashcards){
-		console.log(flashcards[key]);
- 		fcqueuetemp.push(flashcards[key]);
-	}
-
-	while( fcqueuetemp.length>0){
-		var randomnumber=Math.floor(Math.random()*fcqueuetemp.length);
-		fcqueue.push(fcqueuetemp[randomnumber]);
-		fcqueuetemp.splice(randomnumber,1);
-	}
+	jetpack.notifications.show({
+		title: title,
+		body: body,
+		icon: "http://langladder.com/img/ladder.gif"
+	});
 }
  
 function getRandomNumber(maxNumber){
@@ -681,7 +698,7 @@ $.editableFactory = {
 function refreshFavorites(){
 	$("#savedlinksul", gSlider.contentDocument.body).empty();
 	for ( i=0;i<savedsites.length;i++){
-		$("#savedlinksul", gSlider.contentDocument.body).append('<li class="savedlink" id='+savedsites[i].url+'>'+savedsites[i].name+'</li>');
+		$("#savedlinksul", gSlider.contentDocument.body).append('<div class="savedlink" id='+savedsites[i].url+'>'+savedsites[i].name+'</div>');
 	};
 	$(".savedlink", gSlider.contentDocument.body).click(function(event){
 		var url=$(this).attr('id');
@@ -727,60 +744,67 @@ function onEdit1(content){
 * Refreshes the vobab word pane
 */
 function refreshVocabwords(){
-	 
 	$("#editcarddiv", gSlider.contentDocument.body).empty();
-	for ( var elem in flashcards){			
+	var keys=[];
+	for ( var elem in flashcards){
+		keys.push(elem);
+	}
+	keys.sort();
+
+	for (i=0;i<keys.length;i++){		
+		var elem=keys[i];
 		var html='<div class="vocabitem" id="'+flashcards[elem].forword+'"><div class="vacabelement"><img class="expandcontract" src="http://www.langladder.com/img/plus-1.png"/>';
 		html=html+'<span class="vocabword">'+ flashcards[elem].forword +'</span><div style="float:right;"><img class="gradeicon" src="http://www.langladder.com/img/circle-1.png" />';
 		html=html+'<img class="trashicon" src="http://www.langladder.com/img/trash-2.png" /></div></div><div class="vocabexpand">';
 		html=html+'<div class="translationword" >'+ flashcards[elem].definition +'</div>';
-		html=html+'<div class="nextscheduled" style="left:180;top:;width:80;position:absolute;">next scheduled:<br/> 4 days</div>';
+		html=html+'<div class="nextscheduled" style="left:180;top:;width:80;position:absolute;"></div>';
 		html=html+'<div class="samplesentence">'+ flashcards[elem].sentence +'</div>';
 		html=html+'<div class="weblink">'+ flashcards[elem].url +' </div></div></div>';
 		$("#editcarddiv", gSlider.contentDocument.body).append(html);
 	};
-		$(".deletebtn", gSlider.contentDocument.body).click(function(event){
-					 delete flashcards[$(this).parent().parent().attr("id")];
-					 $(this).parent().parent().toggle();//.css("border","9px solid red");
-		});
-		
-		/*
-		var script = $.ajax({
-		  url: "http://langladder.com/jquery.editable-1.3.3.js",
-		  async: false
-		 }).responseText;
-		
-		eval(script);
-		*/
-		$('.vocabword', gSlider.contentDocument.body).editable({onSubmit:onEdit1, context: gSlider.contentDocument.body});
-		$('.translationword', gSlider.contentDocument.body).editable({onSubmit:onEdit1, context: gSlider.contentDocument.body});
-		$('.samplesentence', gSlider.contentDocument.body).editable({onSubmit:onEdit1, context: gSlider.contentDocument.body});
 	
-		$('.vocabexpand', gSlider.contentDocument.body).hide();
-		$(".expandcontract", gSlider.contentDocument.body).click(function(){
-			console.log($(this).attr('src'));
-			if($(this).attr('src')==='http://www.langladder.com/img/plus-1.png'){
-				expandItem($(this).parent().parent());
-			}
-			else {
-				contractItem($(this).parent().parent());
-			}
-		});
+	$(".deletebtn", gSlider.contentDocument.body).click(function(event){
+		 delete flashcards[$(this).parent().parent().attr("id")];
+		 $(this).parent().parent().toggle();//.css("border","9px solid red");
+	});
+	
+	/*
+	var script = $.ajax({
+	  url: "http://langladder.com/jquery.editable-1.3.3.js",
+	  async: false
+	 }).responseText;
+	
+	eval(script);
+	*/
+	$('.vocabword', gSlider.contentDocument.body).editable({onSubmit:onEdit1, context: gSlider.contentDocument.body});
+	$('.translationword', gSlider.contentDocument.body).editable({onSubmit:onEdit1, context: gSlider.contentDocument.body});
+	$('.samplesentence', gSlider.contentDocument.body).editable({onSubmit:onEdit1, context: gSlider.contentDocument.body});
 
-		$('#filterselect', gSlider.contentDocument.body).change(function(){
-		  	console.log($(this));
-		});
+	$('.vocabexpand', gSlider.contentDocument.body).hide();
+	$(".expandcontract", gSlider.contentDocument.body).click(function(){
+		console.log($(this).attr('src'));
+		if($(this).attr('src')==='http://www.langladder.com/img/plus-1.png'){
+			expandItem($(this).parent().parent());
+		}
+		else {
+			contractItem($(this).parent().parent());
+		}
+	});
 
-		$("img.trashicon", gSlider.contentDocument.body).hover(function(){
-				$(this).attr("src", "http://www.langladder.com/img/trash-1.png");
-		},function(){
-				$(this).attr("src", "http://www.langladder.com/img/trash-2.png");
-		});
-		
-		$("img.trashicon", gSlider.contentDocument.body).click(function(){
-			delete flashcards[$(this).parent().parent().parent().attr("id")];
-			$(this).parent().parent().parent().hide();
-		});
+	$('#filterselect', gSlider.contentDocument.body).change(function(){
+	  	console.log($(this));
+	});
+
+	$("img.trashicon", gSlider.contentDocument.body).hover(function(){
+			$(this).attr("src", "http://www.langladder.com/img/trash-1.png");
+	},function(){
+			$(this).attr("src", "http://www.langladder.com/img/trash-2.png");
+	});
+	
+	$("img.trashicon", gSlider.contentDocument.body).click(function(){
+		delete flashcards[$(this).parent().parent().parent().attr("id")];
+		$(this).parent().parent().parent().hide();
+	});
 }
 
 
@@ -793,7 +817,7 @@ function expandItem(element){
 	console.log("expand");
 	element.find('.expandcontract').attr('src','http://www.langladder.com/img/minus-1.png');
 	element.find('.vocabexpand').show();
-	element.height( 150 );
+	element.height( 170 );
 }
 
 /**
@@ -896,44 +920,33 @@ jetpack.slideBar.append({
 		$(".resultbtn", slider.contentDocument.body).css("visibility","hidden");
 	
 		$("#newquizbtn", slider.contentDocument.body).click(function(event){
-						console.log("#newquizbtn was clicked");
-						arrangeQueue();
-						lastBegin=new Date();
-						numCorrect=0;
-						numSeen=0;
-						SetUpCard();
-						$(".cardclass", slider.contentDocument.body).show();
+			console.log("#newquizbtn was clicked");
+			
+			lastBegin=new Date();
+			numCorrect=0;
+			numSeen=0;
+			SetUpCard();
+			$(".cardclass", slider.contentDocument.body).show();
 		});
 		
 		function SetUpCard(){
-				$("#scoreval", slider.contentDocument.body).text("Score: "+numCorrect+" / "+numSeen+ "		 "+(fcqueue.length) +" left" +". " + numRightInRow(fcqueue[0],lastBegin) +" correct");
-				$("#quizword", slider.contentDocument.body).text(fcqueue[0].forword);
-				var stat=new FlashcardPerformance(fcqueue[0]);
-				console.log(stat);
+			numSeen=numSeen+1;
+			
+			currentCard=getNextCard();
+			//$("#scoreval", slider.contentDocument.body).text("Score: "+numCorrect+" / "+numSeen+ "		 "+(fcqueue.length) +" left" +". " + numRightInRow(fcqueue[0],lastBegin) +" correct");
+			$("#quizword", slider.contentDocument.body).text(currentCard.forword);
 		}
 		
 		function FlipCard(){
-						 if($("#quizword", slider.contentDocument.body).text()===fcqueue[0].forword){
-									$("#quizword", slider.contentDocument.body).text(fcqueue[0].definition);
-							}
-							else{
-									$("#quizword", slider.contentDocument.body).text(fcqueue[0].forword);
-							}
-		}
-		
-		function GetNextCard(){
-			if(fcqueue.length>1){
-				handleResults(fcqueue[0],lastBegin);
-				fcqueue.shift();
-				numSeen=numSeen+1;
-				SetUpCard();
-			 }else{
-						 $("#quizword", slider.contentDocument.body).text("No more cards left");	
-			 }
+			if($("#quizword", slider.contentDocument.body).text()!=currentCard.definition){
+				$("#quizword", slider.contentDocument.body).text(currentCard.definition);
+			}
+			else{
+				$("#quizword", slider.contentDocument.body).text(currentCard.forword);
+			}
 		}
 		
 		$("#flipbtn", slider.contentDocument.body).click(function(event){
-			console.log("#flipbtn was clicked");
 			console.log("card flipped");
 			$(".resultbtn", slider.contentDocument.body).css("visibility","visible");
 			FlipCard();
@@ -942,16 +955,18 @@ jetpack.slideBar.append({
 		$("#correctbtn", slider.contentDocument.body).click(function(event){
 			console.log("#correctbtn was clicked");
 			numCorrect=numCorrect+1;
-			FCPerfAdd(fcqueue[0], true);
+			FCPerfAdd(currentCard, true);
 			$(".resultbtn", slider.contentDocument.body).css("visibility","hidden");
-			GetNextCard();
+			adjustAddFCScore(currentCard,fcScores);
+			SetUpCard();
 		});
 		
 		$("#inccorrectbtn", slider.contentDocument.body).click(function(event){
 			console.log("#inccorrectbtn was clicked");
-			FCPerfAdd(fcqueue[0], false);
+			FCPerfAdd(currentCard, false);
 			$(".resultbtn", slider.contentDocument.body).css("visibility","hidden");
-			GetNextCard();
+			adjustAddFCScore(currentCard,fcScores);
+			SetUpCard();
 		});
 		
 		//******************Related To Settings***************************************
@@ -978,6 +993,7 @@ jetpack.slideBar.append({
 	//*******************HTML for Slidebar******************************************
   html: <>
 	<style><![CDATA[
+	* {margin:0;padding:0}
 	body { color: #000000; background: #F2F2F2; margin:0;padding:0; font:1.5em Arial,cambria,palatino,georgia,serif; font-size:13px; font-size-adjust:none; font-style:normal; font-variant:normal;font-weight:normal; line-height:normal;}
 	h1 {font-size:38px ;margin: 10px; text-align: center; vertical-align: middle; }
 	.tabtable { width: 310px; margin-left:auto; margin-right:auto; border-collapse: collapse;}
@@ -985,7 +1001,7 @@ jetpack.slideBar.append({
 	.btn { text-align: center; padding: 4px; margin: 0px; width:90px; border-style:solid; border-width:1px; border-color:solid gray; cursor:pointer;font-size:13px; -moz-border-radius:4px;background: -moz-linear-gradient(top, white, #F2F2F2); }
 	li.btn {display:block;float:left;display:inline; }
 	.bdy { position1:absolute: margin-left:10px; margin-right:10px; height:70%;	 margin:0px; width:350px;}
-	.pane { position:absolute; margin-left:10px; width:330; height:800px; background: grey; border-style: solid; border-width:1px; border-color:gray;}
+	.pane { position:absolute; margin-left:10px; width:330; height:750px; background: grey; border-style: solid; border-width:1px; border-color:gray;}
 	div.scoretab { position:absolute; right:0px; top:0px; font-weight:bold;margin: 5px;  border-style:solid; border-width:2px;width:120px; }
 	ul.btngroup {display:block; list-style-type:none;margin:0;padding:0; margin:7; width:330px}
 	li.tab {display:block;float:left;display:inline; background: -moz-linear-gradient(top, white, #F2F2F2); }//, #F8F0F8
@@ -996,7 +1012,7 @@ jetpack.slideBar.append({
 	#searchinput {	  padding:10px;	 outline:none;	height:36px;  }	 
 	.focusField {	border:solid 2px #73A6FF;  background:#EFF5FF;	color:#000;	 }	
 	.idleField {  background:#EEE;	 color: #6F6F6F;  border: solid 2px #DFDFDF;  }	 
-	.savedlink { font-size:13px; cursor:pointer; }
+	.savedlink { font-size:13px; cursor:pointer; width:100%; height:50; border-style: solid; border-width:1px; border-color:black;}
 	
 	li.tab:link			  { color: black;  text-decoration:none;  opacity: .7;background: -moz-linear-gradient(top, white, #2B60DE);}
 	li.tab:visited			  { color: black;  text-decoration:none;  opacity: .7;background: -moz-linear-gradient(top, white, #2B60DE);}
@@ -1008,7 +1024,7 @@ jetpack.slideBar.append({
 	li.savedlink:active			  { color: black; text-decoration:none;	 opacity: 1;color: #2B60DE;}	
 	
 	/*new part*/
-	div.vocabitem {position: absolute1;width:310px;height:50px;border-width:1px;border-color:gray;border-style:solid; font-size:18; background: -moz-linear-gradient(top, white, grey);  }
+	div.vocabitem {position: absolute1;width:310px;height:50;border-width:1px;border-color:gray;border-style:solid; font-size:18; background: -moz-linear-gradient(top, white, grey);  }
 	.vacabelement {margin-top:14;}
 	img {vertical-align: top; } 
 	.trashicon {visibility:visible;margin-right:15;cursor:pointer;}
@@ -1017,8 +1033,8 @@ jetpack.slideBar.append({
 	.translationword {font-style: italic; left:0px;top:0px;width:80;position:absolute;}
 	.vocabword {font-weight:bold;padding:16;}
 	.nextscheduled {font-size:10px;}
-	.samplesentence {font-size:13px;top:40px;width:250;position:absolute;}
-	.weblink {font-size:10px;top:70px;width:250;position:absolute;}
+	.samplesentence {font-size:13px;top:30;width:250;height:40;position:absolute;}
+	.weblink {font-size:10px;top:95;width:270;position:absolute;}
 	
 	]]></style>
 	<body>
@@ -1064,8 +1080,7 @@ jetpack.slideBar.append({
 				<div id="learningpanel" style="background:white;margin-left:10;padding:0;width:310px; height:330px; border-style: solid; border-width:1px; border-color:solid gray;overflow:auto;">
 					<ul id="savedlinksul" style="list-style-type:disc:display-type:block">
 						<li class="savedlink" id="booksearch">Link 1</li>
-						<li class="savedlink" id="blogsearch">Link 2</li>
-						<li class="savedlink" id="websearch">Link 3</li>
+					
 					</ul>
 				</div>
 			</div>
