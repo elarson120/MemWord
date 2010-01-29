@@ -7,11 +7,11 @@
 *** Last changes: 20/01/2010 ***
 ***********************************************************
 **TODOS
-*Add functions to refresh vocab and links
-*Add function to highlight vocab words
 *Reorganize CSS trees and eliminate unused code blocks
-*Fix Vocabulary table formatting
+*Fix Vocabulary table bugs and add filtering
 *Finalize flashcard graphics
+*investigate use of canvas UI element
+*alphabetical sorting
 */
 
 var manifest = {  
@@ -30,13 +30,122 @@ jetpack.future.import("storage.simple");
 jetpack.future.import("slideBar");
 
 countrycodes={
-				"English": "en",
-				"Spanish": "es",
-				"Italian": "it",
-				"French": "fr",
-				"German": "de",
-				"Portuguese": "pt"
+	"English": "en",
+	"Spanish": "es",
+	"Italian": "it",
+	"French": "fr",
+	"German": "de",
+	"Portuguese": "pt"
 };
+
+/**
+* The main flashcard object.  Object is used to store
+* data in the storage.simple object.
+*/
+function Flashcard(forword, definition, sentence, url){
+	var d=new Date();
+	this.forword=forword;
+	this.definition=definition;
+	this.dt_added=d;
+	this.forword_code=settings["learninglang"];
+	this.natword_code=settings["nativelang"];
+	this.sentence=sentence;
+	this.url=url;
+	this.history=this.history || [];
+}
+
+function FlashcardPerformance(fc){
+	var now=new Date();
+	this.hasStudied=fc.history.length>0;
+	this.lifetimeStats=statsSession(fc,"1/1/1900");
+	this.onemonthStats=statsSession(fc,getDaysAgo(30));
+	this.oneweekStats=statsSession(fc,getDaysAgo(7));
+	this.onedayStats=statsSession(fc,getDaysAgo(1));
+	if(this.hasStudied){
+		var dt=new Date(fc.history[fc.history.length-1].date);
+		this.daysAgoStudied=(now.getTime()-dt.getTime()) / 86400000;//47,617,850
+	}else
+	{
+		this.lastDayStudied=false;
+	}
+	this.numCardsInRow=numRightInRow(fc,"1/1/1900");
+}
+
+function generateScore(fc){
+	var score=1;
+	var perf=new FlashcardPerformance(fc);
+	if(perf.numCardsInRow<=1){
+		score=6;
+	}else if(perf.numCardsInRow<=4){
+		score=4;
+	}else if(perf.numCardInRow<=8){
+		score=2;
+	}else if(perf.numCardInRow<=16){
+		score=1;
+	}else{ 
+		score=0.5;
+	}
+	
+	if(this.lastDayStudied==false){
+		
+	}else if(this.lastDayStudied>10){
+		score*=2;
+	}else if(this.lastDayStudied>4){
+		score*=1.5;
+	}
+	
+	return score;
+}
+
+function FCScores(){
+	this.scores={};
+	this.scoremin={};
+	this.totalScore=0;
+	for ( var elem in flashcards){
+		this.scoremin[elem]=this.totalScore;
+		scores[elem]=generateScore(flashcards[elem]);
+		this.totalScore+=scores[elem];
+	}
+	/*for(var elem in flashcards){
+		this.fcpropbs[elem]=fcscores[elem]/totalScore;
+	}*/
+}
+
+function adjustAddFCScore(fc,fcscore){
+	var score=generateScore(fc);;
+	if(score[fc.forword] != nothing){
+		fcscore.totalScore=fcscore.totalScore-fcscore.scores[fc.forword];
+	}
+	fcscore.score[fc.forword]+=score;
+	this.totalScore=0;
+	for ( var elem in flashcards){
+		this.scoremin[elem]=this.totalScore;
+		this.totalScore+=scores[elem];
+	}
+}
+
+function getNextCard(){
+	var randNum=getRandomNumber(fcScores.totalScore);
+	var fcard;
+	for(var elem in flashcards){
+		if(randNum>=fcScores.scoremin[elem] && randNum < (fcScores.scoremin[elem]+fcScores.scores[elem])){
+			fcard=flashcards[elem];
+			break;
+		}
+	}
+	return fcard;
+}
+
+var fcScores=new FCScores();
+
+
+var gSlider=0; //global variable to point to the slider context
+var highlightWord=false; //global variable to set the tool to only highlight words once
+
+//CONST used for flashcard quiz
+var backShuffleCards=3;
+var correctMultiple=1;
+var timesCorrectCutoff=2;
 
 // Create the persistent flashcards array if it doesn't already exist.
 jetpack.storage.simple.flashcards = jetpack.storage.simple.flashcards || {};
@@ -51,6 +160,8 @@ var fcqueue = jetpack.storage.simple.fcqueue;
 jetpack.storage.simple.savedsites = jetpack.storage.simple.savedsites || [];
 var savedsites = jetpack.storage.simple.savedsites;
 
+
+
 // If there are no languages set, the defaul speak English and learning Spanish is used
 if(settings["learninglang"]==undefined){
 settings["learninglang"]="es";
@@ -58,20 +169,34 @@ settings["learninglang"]="es";
 if(settings["nativelang"]==undefined){
 settings["nativelang"]="en";
 }
-var currentURL;
-var window;
-var document;
 
+
+/**
+* Tracks which page the user is reading
+* 
+*/
 jetpack.tabs.onFocus(function(event){
 	console.log(this.url);
 	currentURL=this.url;
 });
+
+
+/**
+* When pages are loaded the text is highlighted
+*/
 jetpack.tabs.onReady(function(event){
-	console.log(this.url);
 	currentURL=this.url;
+	if(highlightWord){
+		//showJetpackNote(this.url,"test");
+		highlightVocabWords(this.contentDocument);
+		highlightWord=false;
+	}
 });
 
-
+/**
+* Search a body of html text for a search term.  If the term is found, a 
+*  highlightStart and end tags are inserted before and after the snippet
+*/
 function doHighlight(bodyText, searchTerm, highlightStartTag, highlightEndTag) 
 {
   // the highlightStartTag and highlightEndTag parameters are optional
@@ -80,11 +205,6 @@ function doHighlight(bodyText, searchTerm, highlightStartTag, highlightEndTag)
 	highlightEndTag = "</font>";
   }
   
-  // find all occurences of the search term in the given text,
-  // and add some "highlight" tags to them (we're not using a
-  // regular expression search, because we want to filter out
-  // matches that occur within HTML tags and script blocks, so
-  // we have to do a little extra validation)
   var newText = "";
   var i = -1;
   var lcSearchTerm = searchTerm.toLowerCase();
@@ -100,10 +220,13 @@ function doHighlight(bodyText, searchTerm, highlightStartTag, highlightEndTag)
 	  if (bodyText.lastIndexOf(">", i) >= bodyText.lastIndexOf("<", i)) {
 		// skip anything inside a <script> block
 		if (lcBodyText.lastIndexOf("/script>", i) >= lcBodyText.lastIndexOf("<script", i)) {
-		  newText += bodyText.substring(0, i) + highlightStartTag + bodyText.substr(i, searchTerm.length) + highlightEndTag;
-		  bodyText = bodyText.substr(i + searchTerm.length);
-		  lcBodyText = bodyText.toLowerCase();
-		  i = -1;
+			if ((lcBodyText.substr(i-1, 1)===" "&&lcBodyText.substr(i+searchTerm.length,1)===" "))//||(lcBodyText.substr(i-1, 1)===" "&&lcBodyText.substr(i+searchTerm.length)===".")) 
+			{ 
+			 newText += bodyText.substring(0, i) + highlightStartTag + bodyText.substr(i, searchTerm.length) + highlightEndTag;
+			  bodyText = bodyText.substr(i + searchTerm.length);
+			  lcBodyText = bodyText.toLowerCase();
+			  i = -1;
+			}
 		}
 	  }
 	}
@@ -112,76 +235,102 @@ function doHighlight(bodyText, searchTerm, highlightStartTag, highlightEndTag)
   return newText;
 }
 
+/**
+* Iterates through list of flashcards and iteratively adds
+* highlighting to the page defined in the context object.
+*/
+function highlightVocabWords(context){
+	var htmlText=$("body",context).html();
 
+	for ( var elem in flashcards){	
+		htmlText=doHighlight(htmlText,flashcards[elem].forword);
+	}
+	try{
+	$("body",context).html(htmlText);
+	}catch(error){
+		console.log(error);
+	}
+}
+
+/**
+* Add buttons to the status bar. 
+* 
+*/
 //TODO: Fix the size of the status bar so that everything fits and is clearly viewable
 jetpack.statusBar.append({ 
-	html: '<B style="padding-top:0px; padding-bottom:20px; margin:0px">LangLadder</B>', 
+	html: '<P style="padding-top:0px; padding-bottom:20px; margin:0px; cursor:pointer;">Add Site</P>', 
 	width: 50,
 	onReady: function(widget){	
-	 $(widget).click(function(){
+	 $("P",widget).click(function(){
 				var arr = jQuery.grep(savedsites, function(n, i){
 					return (n.url==jetpack.tabs.focused.url);
 				});
 				console.log(arr);
 				if(arr.length==0){
 					savedsites.push({name: jetpack.tabs.focused.contentDocument.title, url: jetpack.tabs.focused.url});
-					console.log(jetpack.tabs.focused.contentDocument.title + " saved.");
+					refreshFavorites();
+					showJetpackNote(jetpack.tabs.focused.contentDocument.title + " saved.","Saved");
 				}else{
-					console.log("You already saved "+ jetpack.tabs.focused.contentDocument.title + ".");
+					showJetpackNote("You already saved "+ jetpack.tabs.focused.contentDocument.title + ".","Not Saved");
 				}
 			});
 		}
 });
 
+/**
+* Adds context menu item
+* 
+*/
 jetpack.menu.context.page.add({	 
-   label: "Add Word to LangLadder",	 
+   label: "Add to LangLadder",	 
    command: function (event) { 
-						var sentence="";
-						var vocabWord=jetpack.selection.text.trim();
-						jetpack.selection.html="<span id='"+ vocabWord.toLowerCase() +"' class='vocabword' style='background: red'>" +
-					jetpack.selection.html + "</span>";
-						var doc=jetpack.tabs.focused.contentDocument;
-						var parents=$("#"+vocabWord.toLowerCase(),doc).parents();
-						//console.log(parents);
-						for(i=1;i<parents.length;i++){
-							if(parents[i].tagName=="P"||parents[i].tagName=="DIV"||parents[i].tagName=="BODY"||parents[i].tagName=="HTML"){
-										 var innertext=parents[i].textContent;
-										 var regexTxt=new RegExp("[^.]+"+vocabWord+"[^.]+","im");
-										 sentence=regexTxt.exec(innertext);
-										 console.log(sentence);
-										 break;
-								}
-						}
-						translateString(vocabWord.toLowerCase(), settings["learninglang"], settings["nativelang"],sentence);
+		var sentence="";
+		var vocabWord=jetpack.selection.text.trim();
+		jetpack.selection.html="<span id='"+ vocabWord.toLowerCase() +"' class='vocabword' style='background: red'>" +
+		jetpack.selection.html + "</span>";
+		var doc=jetpack.tabs.focused.contentDocument;
+		var parents=$("#"+vocabWord.toLowerCase(),doc).parents();
+		//console.log(parents);
+		for(i=1;i<parents.length;i++){
+			if(parents[i].tagName=="P"||parents[i].tagName=="DIV"||parents[i].tagName=="BODY"||parents[i].tagName=="HTML"){
+				var innertext=parents[i].textContent;
+				var regexTxt=new RegExp("[^.]+"+vocabWord+"[^.]+","im");
+				sentence=regexTxt.exec(innertext);
+				console.log(sentence);
+				break;
+			}
+		}
+		translateString(vocabWord.toLowerCase(), settings["learninglang"], settings["nativelang"],sentence);
 	 }
 }); 
 
-function Flashcard(forword, definition, sentence, url){
-	var d=new Date();
-	this.forword=forword;
-	this.definition=definition;
-	this.dt_added=d;
-	this.forword_code=settings["learninglang"];
-	this.natword_code=settings["nativelang"];
-	this.sentence=sentence;
-	this.url=url;
-	this.history=this.history || [];
-	this.quizResults=this.quizResults || [];
-}
 
+
+/**
+* Add the perf info to a given flashcard
+*/
 function FCPerfAdd(flashcard, wascorrect){
 	var d=new Date();
 	flashcard.history.push({date: d, correct: wascorrect}); 
 	console.log(flashcard);
 }
 
+
+
+/**
+* Adds the 
+*/
+/*
 function FCQuizResultsAdd(flashcard, level, perc, total){
 	var d=new Date();
 	flashcard.quizResults.push({date: d, level: level, percentage: perc, totalreps: total}); 
    	console.log(flashcard);
 }
+*/
 
-
+/**
+* Returns the number of times correct in a row that a user has had in a row
+*/
 function numRightInRow(fc, lastBegin){
 	var numRight=0;
 	for(i=fc.history.length-1;i>=0;i--){
@@ -197,6 +346,9 @@ function numRightInRow(fc, lastBegin){
 	 return numRight;
 }
 
+/**
+* Returns the number of times seen and number of times correct since a given date
+*/
 function statsSession(fc, lastBegin){
 	var sessionPerf=jQuery.grep(fc.history, function(n, i){
 	return n.date>=lastBegin;
@@ -212,38 +364,64 @@ function statsSession(fc, lastBegin){
 	numCorrect: numCorrect};
 }
 
+/**
+* Get date specified by number of days ago
+*/
 function getDaysAgo(days){
-	var dt=new Date();
-	dt.setDate(dt.getDate()-days)
-	return dt;
+	var today=new Date();
+	var returnDt=new Date();
+	returnDt.setDate(today.getTime()-(days*86400000));
+	return returnDt;
 }
 
-//CONST used for flashcard quiz
-var backShuffleCards=3;
-var correctMultiple=1;
-var timesCorrectCutoff=2;
+/**
+* Get date specified by number of days ago
+*/
+function getDaysAgoFromDate(dt){
+	var today=new Date();
+	var diff_date=today-dt;
+	
+	//var num_years = diff_date/31536000000;
+	//var num_months = (diff_date % 31536000000)/2628000000;
+	//var num_days = ((diff_date % 31536000000) % 2628000000)/86400000;
+	var num_days = diff_date / 86400000;
+	
+	return num_days;
+}
 
+
+
+function handleNextCardSelect(){
+	
+}
+
+/**
+* 
+*/
 function handleResults(fc, lastBegin){
 	var numinarow=numRightInRow(fc,lastBegin);
-	 var sessionStats=statsSession(fc,lastBegin);
-	 var sessionPerf=sessionStats.numCorrect/sessionStats.numReps;
-	 console.log(numinarow);
-	 console.log(sessionStats);
+	var sessionStats=statsSession(fc,lastBegin);
+	var sessionPerf=sessionStats.numCorrect/sessionStats.numReps;
+	console.log(numinarow);
+	console.log(sessionStats);
  
-	 if(numinarow>=timesCorrectCutoff){
+	if(numinarow>=timesCorrectCutoff){
 		if(sessionStats.sessionPerf<.6){
 			FCQuizResultsAdd(fc, 1, sessionPerf, sessionStats.numReps);
-			}else if(sessionStats.sessionPerf<.8){
-				FCQuizResultsAdd(fc, 2, sessionPerf, sessionStats.numReps);
-			}else{
-				FCQuizResultsAdd(fc, 3, sessionPerf, sessionStats.numReps);
-			}
+		}else if(sessionStats.sessionPerf<.8){
+			FCQuizResultsAdd(fc, 2, sessionPerf, sessionStats.numReps);
 		}else{
-			var backShuffle=(numinarow+1)*backShuffleCards*correctMultiple;
-			fcqueue=insertInArray(fc, fcqueue, backShuffle);
-	 	}
+			FCQuizResultsAdd(fc, 3, sessionPerf, sessionStats.numReps);
+		}
+	}else{
+		var backShuffle=(numinarow+1)*backShuffleCards*correctMultiple;
+		fcqueue=insertInArray(fc, fcqueue, backShuffle);
+	}
 }
 
+/**
+* Inserts an item in an array in a certain position
+*/
 function insertInArray(item, array, position){
 	if(position>array.length){
 		position=array.length;
@@ -255,6 +433,9 @@ function insertInArray(item, array, position){
 	 return returnArray;
 } 
 
+/**
+* Translates word from sourcelang into destlang.  Adds those and sentence into flashcard
+*/
 function translateString(word, sourcelang, destlang, sentence){		
 	var translation;
 	console.log(word+sourcelang+destlang);
@@ -264,17 +445,27 @@ function translateString(word, sourcelang, destlang, sentence){
 		flashcards[word]=new Flashcard(word,translation,sentence,currentURL);
 		console.log(flashcards);
 		showJetpackNote(word+"="+translation+"\r"+sentence,"Word Added");
+		refreshVocabwords();
 	});
  }
  
- function showJetpackNote(body, title){
- jetpack.notifications.show({
-			  title: title,
-			  body: body,
-			  icon: "http://langladder.com/img/ladder.gif"
-		  });
- }
- 
+/**
+* Jetpack notifications
+*/
+function showJetpackNote(body, title){
+jetpack.notifications.show({
+		  title: title,
+		  body: body,
+		  icon: "http://langladder.com/img/ladder.gif"
+	  });
+}
+
+
+
+/**
+* 
+* 
+*/
 function arrangeQueue(){
 	var fcqueuetemp=[];
 	fcqueue=[];
@@ -290,22 +481,34 @@ function arrangeQueue(){
 	}
 }
  
+function getRandomNumber(maxNumber){
+	return Math.random()*maxNumber;
+}
+
+/**
+* Opens a new tab loaded with a website
+* 
+*/
 function openNewTab(webSite, switchtotab){
 	var tab=jetpack.tabs.open(webSite,true);
+	highlightWord=true;
+	/*
+	$(tab.contentDocument).ready(function(){
+		console.log("got here");
+		//highlightVocabWords(tab.contentDocument);
+		showJetpackNote("test","test");
+	});
+*/	
 	if(switchtotab){
 		tab.focus();
 	}
 }
  
-function getYoutubeAvailableCaptions(){
-	var avail="http://video.google.com/timedtext?v=HQdf5Gwni78&type=track&name=perro%20ayuda%20a%20su%20amigo%20sub%20esp&lang=es"
-}
- 
-function getYoutubeCaption(){
-	var youtubecaption="http://video.google.com/timedtext?hl=en_US&v=avitxo8ueEA&type=track&lang=en";
-}
- /****************************/
 
+ /****************************/
+/**
+* Javascript that I needed to modify.  Handles inline forms
+*/
 (function($){
 /*
  * Editable 1.3.3
@@ -321,7 +524,7 @@ $.fn.editable = function(options){
 		onEdit: null,
 		onSubmit: null,
 		onCancel: null,
-		editClass: null,
+		editClass: "editClassRock",
 		submit: null,
 		cancel: null,
 		type: 'text', //text, textarea or select
@@ -349,10 +552,9 @@ $.fn.editable = function(options){
 		$.editableFactory[opts.type].toEditable($this.empty(),opts);
 		// Configure events,styles for changed content
 		$this.data('editable.previous',$this.data('editable.current'));
-			 //.children()
-				// .focus()
-				 //.addClass(opts.editClass);
-		console.log("still going");
+		//$this.children()
+			//	.focus();
+				//.addClass(opts.editClass);
 		// Submit Event
 		if(opts.submit){
 			$('<button/>').appendTo($this)
@@ -414,7 +616,6 @@ $.editableFactory = {
 		toEditable: function($this,options){
 			$('<input/>',options.context).appendTo($this)
 						 .val($this.data('editable.current'));
-			console.log("did this break it?")
 		},
 		getValue: function($this,options){
 			return $this.children().val();
@@ -472,18 +673,162 @@ $.editableFactory = {
 	}
 }
 })(jQuery);
+
+/**
+* Refreshes the favorites pane
+* 
+*/
+function refreshFavorites(){
+	$("#savedlinksul", gSlider.contentDocument.body).empty();
+	for ( i=0;i<savedsites.length;i++){
+		$("#savedlinksul", gSlider.contentDocument.body).append('<li class="savedlink" id='+savedsites[i].url+'>'+savedsites[i].name+'</li>');
+	};
+	$(".savedlink", gSlider.contentDocument.body).click(function(event){
+		var url=$(this).attr('id');
+		openNewTab(url, true);
+	});
+}
+
+
+/**
+* 
+* TODO
+*/
+function onEdit1(content){
+	var vocabword;
+	switch($(this).attr( "class" )){
+		case "vocabword":
+			vocabword=$(this).parent().parent().attr("id");
+			console.log(vocabword);
+			var tempCard=flashcards[vocabword];
+			tempCard.forword=content.current;
+			delete flashcards[vocabword];
+			flashcards[content.current]=tempCard;
+			refreshVocabwords();
+			break;
+		case "translationword":
+			vocabword=$(this).parent().parent().attr("id");
+			flashcards[vocabword].definition=content.current;
+			break;
+		case "samplesentence":
+			vocabword=$(this).parent().parent().attr("id");
+			//flashcards[vocabword].sentence=content.current;
+			break;
+		
+	}
+	console.log(vocabword);
+	//console.log($(this).parents("div"));//.attr("id")".vocabitem"
+  	//console.log(content.current+':'+content.previous)
+	//console.log(this);
+}
+
+
+/**
+* Refreshes the vobab word pane
+*/
+function refreshVocabwords(){
+	 
+	$("#editcarddiv", gSlider.contentDocument.body).empty();
+	for ( var elem in flashcards){			
+		var html='<div class="vocabitem" id="'+flashcards[elem].forword+'"><div class="vacabelement"><img class="expandcontract" src="http://www.langladder.com/img/plus-1.png"/>';
+		html=html+'<span class="vocabword">'+ flashcards[elem].forword +'</span><div style="float:right;"><img class="gradeicon" src="http://www.langladder.com/img/circle-1.png" />';
+		html=html+'<img class="trashicon" src="http://www.langladder.com/img/trash-2.png" /></div></div><div class="vocabexpand">';
+		html=html+'<div class="translationword" >'+ flashcards[elem].definition +'</div>';
+		html=html+'<div class="nextscheduled" style="left:180;top:;width:80;position:absolute;">next scheduled:<br/> 4 days</div>';
+		html=html+'<div class="samplesentence">'+ flashcards[elem].sentence +'</div>';
+		html=html+'<div class="weblink">'+ flashcards[elem].url +' </div></div></div>';
+		$("#editcarddiv", gSlider.contentDocument.body).append(html);
+	};
+		$(".deletebtn", gSlider.contentDocument.body).click(function(event){
+					 delete flashcards[$(this).parent().parent().attr("id")];
+					 $(this).parent().parent().toggle();//.css("border","9px solid red");
+		});
+		
+		/*
+		var script = $.ajax({
+		  url: "http://langladder.com/jquery.editable-1.3.3.js",
+		  async: false
+		 }).responseText;
+		
+		eval(script);
+		*/
+		$('.vocabword', gSlider.contentDocument.body).editable({onSubmit:onEdit1, context: gSlider.contentDocument.body});
+		$('.translationword', gSlider.contentDocument.body).editable({onSubmit:onEdit1, context: gSlider.contentDocument.body});
+		$('.samplesentence', gSlider.contentDocument.body).editable({onSubmit:onEdit1, context: gSlider.contentDocument.body});
+	
+		$('.vocabexpand', gSlider.contentDocument.body).hide();
+		$(".expandcontract", gSlider.contentDocument.body).click(function(){
+			console.log($(this).attr('src'));
+			if($(this).attr('src')==='http://www.langladder.com/img/plus-1.png'){
+				expandItem($(this).parent().parent());
+			}
+			else {
+				contractItem($(this).parent().parent());
+			}
+		});
+
+		$('#filterselect', gSlider.contentDocument.body).change(function(){
+		  	console.log($(this));
+		});
+
+		$("img.trashicon", gSlider.contentDocument.body).hover(function(){
+				$(this).attr("src", "http://www.langladder.com/img/trash-1.png");
+		},function(){
+				$(this).attr("src", "http://www.langladder.com/img/trash-2.png");
+		});
+		
+		$("img.trashicon", gSlider.contentDocument.body).click(function(){
+			delete flashcards[$(this).parent().parent().parent().attr("id")];
+			$(this).parent().parent().parent().hide();
+		});
+}
+
+
+
+/**
+* 
+* 
+*/
+function expandItem(element){
+	console.log("expand");
+	element.find('.expandcontract').attr('src','http://www.langladder.com/img/minus-1.png');
+	element.find('.vocabexpand').show();
+	element.height( 150 );
+}
+
+/**
+* 
+* 
+*/
+function contractItem(element){
+	console.log("collapse");
+	element.find('.vocabexpand').hide();
+	element.find('.expandcontract').attr('src','http://www.langladder.com/img/plus-1.png');
+	element.height( 50 );
+}
 /******************************/
 jetpack.slideBar.append({
 	icon: "http://langladder.com/img/ladder.gif",
 	width: 350,
 	persist: true,
 	onClick: function (slider) {
+		gSlider=slider;
+		console.log(jetpack.tabs);
+	
 		//***************Sets buttons and tabs at top to proper positions***********
 		$(".tab", slider.contentDocument.body).css("font-weight","normal");
 		$(".pane", slider.contentDocument.body).hide();
 		$("#startingout", slider.contentDocument.body).show();
+		//$("#quizpane", slider.contentDocument.body).show();
 		$("#startingtab", slider.contentDocument.body).css("font-weight","bold");
-					
+			
+		$("#startingtab", slider.contentDocument.body).click(function(event){
+			$(".tab", slider.contentDocument.body).css("font-weight","normal");
+			$(this).css("font-weight","bold");
+			$(".pane", slider.contentDocument.body).hide();
+			$("#startingout", slider.contentDocument.body).show();
+		});		
+		
 		$("#wordedittab", slider.contentDocument.body).click(function(event){
 			$(".tab", slider.contentDocument.body).css("font-weight","normal");
 			$(this).css("font-weight","bold");
@@ -494,27 +839,10 @@ jetpack.slideBar.append({
 		$("#quiztab", slider.contentDocument.body).click(function(event){
 			$(".tab", slider.contentDocument.body).css("font-weight","normal");
 			$(this).css("font-weight","bold");
+			$(".pane", slider.contentDocument.body).hide();
 			$("#quizpane", slider.contentDocument.body).show();
-			$("#editcards", slider.contentDocument.body).hide();
-			$("#startingout", slider.contentDocument.body).hide();
-			$("#aboutpane", slider.contentDocument.body).hide();
 		});
-		$("#startingtab", slider.contentDocument.body).click(function(event){
-			$(".tab", slider.contentDocument.body).css("font-weight","normal");
-			$(this).css("font-weight","bold");
-			$("#quizpane", slider.contentDocument.body).hide();
-			$("#editcards", slider.contentDocument.body).hide();
-			$("#startingout", slider.contentDocument.body).show();
-			$("#aboutpane", slider.contentDocument.body).hide();
-		});
-		$("#abouttab", slider.contentDocument.body).click(function(event){
-			$(".tab", slider.contentDocument.body).css("font-weight","normal");
-			$(this).css("font-weight","bold");
-			$("#quizpane", slider.contentDocument.body).hide();
-			$("#editcards", slider.contentDocument.body).hide();
-			$("#startingout", slider.contentDocument.body).hide();
-			$("#aboutpane", slider.contentDocument.body).show();
-		});
+	
 		
 		//***********Handles functions on gettingstarted tab**********************************
 		$(".learninglink", slider.contentDocument.body).click(function(event){
@@ -555,124 +883,17 @@ jetpack.slideBar.append({
 			}	
 		});   
 		 
-		$("#savedlinksul", slider.contentDocument.body).empty();
-		console.log(savedsites);
-		for ( i=0;i<savedsites.length;i++){
-				  console.log(savedsites[i]);
-			$("#savedlinksul", slider.contentDocument.body).append('<li class="savedlink" id='+savedsites[i].url+'>'+savedsites[i].name+'</li>');
-		};
-		$(".savedlink", slider.contentDocument.body).click(function(event){
-			var url=$(this).attr('id');
-			openNewTab(url, true);
-		});
-		
-		//***********Handles functions on see cards tab**********************************
-		/*$("#editcarddiv", slider.contentDocument.body).empty();
-		for ( var elem in flashcards){	
-			elem="fart";		
-			$("#editcarddiv", slider.contentDocument.body).append('<div class="vocabitem"><div class="vacabelement"><img class="expandcontract" src="http://www.langladder.com/img/plus-1.png"/>');
-			$("#editcarddiv", slider.contentDocument.body).append('<span class="vocabword">'+ elem +'</span><div style="float:right"><img class="gradeicon" src="http://www.langladder.com/img/circle-1.png" />');
-			$("#editcarddiv", slider.contentDocument.body).append('<img class="trashicon" src="http://www.langladder.com/img/trash-2.png" /></div></div><div class="vocabexpand">');
-			$("#editcarddiv", slider.contentDocument.body).append('<div class="translationword" >'+ elem +'</div>');
-			$("#editcarddiv", slider.contentDocument.body).append('<div class="nextscheduled" style="left:180;top:;width:80;position:absolute;">next scheduled:<br/> 4 days</div>');
-			$("#editcarddiv", slider.contentDocument.body).append('<div class="samplesentence">'+ elem +'</div>');
-			$("#editcarddiv", slider.contentDocument.body).append('<div class="weblink">'+ elem +' </div></div></div>');
-		};*/
-		$(".deletebtn", slider.contentDocument.body).click(function(event){
-		   console.log($(this).parent().parent().attr("id"));
-					 delete flashcards[$(this).parent().parent().attr("id")];
-					 $(this).parent().parent().toggle();//.css("border","9px solid red");
-		});
-		
+		refreshFavorites();
+		//***********Handles functions on see cards tab**********************************/
+		refreshVocabwords();
 	
-		
-		/*
-		$.ajax({
-		  	url: "http://langladder.com/jquery.editable-1.3.3.js",
-			  dataType: 'script',
-			  success: function(data) {
-				edittableCode();
-			  }
-		});
-		
-		var script = $.ajax({
-		  url: "http://langladder.com/jquery.editable-1.3.3.js",
-		  async: false
-		 }).responseText;
-		var globalEval = function globalEval(src) {
-			var window=slider.contentDocument.defaultView;
-		    if (window.execScript) {
-		        window.execScript(src);
-		        return;
-		    }
-		    var fn = function() {
-		        window.eval.call(window,src);
-		    };
-		    fn();
-		};
-		
-		eval(script);
-		*/
-		edittableCode();
-	//	var window=slider.contentDocument.defaultView;
-		//globalEval(script);
-		
-		function edittableCode(){
-			console.log("loaded stuff")
-			$('.vocabword', slider.contentDocument.body).editable({onSubmit:onEdit1, context: slider.contentDocument.body});
-			$('.translationword', slider.contentDocument.body).editable({onSubmit:onEdit1, context: slider.contentDocument.body});
-			$('.samplesentence', slider.contentDocument.body).editable({onSubmit:onEdit1, context: slider.contentDocument.body});
-		}
-
-		function onEdit1(content){
-	      	console.log(content.current+':'+content.previous)
-		}
-		
-		$('.vocabexpand', slider.contentDocument.body).hide();
-	   $(".expandcontract", slider.contentDocument.body).click(function(){
-			console.log($(this).attr('src'));
-			if($(this).attr('src')==='img/plus-1.png'){
-				expandItem($(this).parent().parent());
-			}
-			else {
-				contractItem($(this).parent().parent());
-			}
-		});
-
-		$('#filterselect', slider.contentDocument.body).change(function(){
-		  	console.log($(this));
-		});
-
-		$("img.trashicon", slider.contentDocument.body).hover(function(){
-				$(this).attr("src", "img/trash-1.png");
-		},		function(){
-						$(this).attr("src", "img/trash-2.png");
-				}
-		);
-		$("img.trashicon", slider.contentDocument.body).click(function(){
-			$(this).parent().parent().parent().hide();
-		});
-		
-		
-		function expandItem(element){
-			console.log("expand");
-			element.find('.expandcontract').attr('src','img/minus-1.png');
-			element.find('.vocabexpand').show();
-			element.height( 150 );
-		}
-
-		function contractItem(element){
-			console.log("collapse");
-			element.find('.vocabexpand').hide();
-			element.find('.expandcontract').attr('src','img/plus-1.png');
-			element.height( 50 );
-		}
+	
 		//************Handles functions on quiz tab***********************************
 		var lastBegin=new Date();
 		var numCorrect=0;
 		var numSeen=0;
 		$(".cardclass", slider.contentDocument.body).hide();
-		
+		$(".resultbtn", slider.contentDocument.body).css("visibility","hidden");
 	
 		$("#newquizbtn", slider.contentDocument.body).click(function(event){
 						console.log("#newquizbtn was clicked");
@@ -685,18 +906,18 @@ jetpack.slideBar.append({
 		});
 		
 		function SetUpCard(){
-						 
-						 //console.log(fcqueue[0]);
-						 $("#scoreval", slider.contentDocument.body).text("Score: "+numCorrect+" / "+numSeen+ "		 "+(fcqueue.length) +" left" +". " + numRightInRow(fcqueue[0],lastBegin) +" correct");
-						 $("#quizword", slider.contentDocument.body).text(fcqueue[0].forword);	 
+				$("#scoreval", slider.contentDocument.body).text("Score: "+numCorrect+" / "+numSeen+ "		 "+(fcqueue.length) +" left" +". " + numRightInRow(fcqueue[0],lastBegin) +" correct");
+				$("#quizword", slider.contentDocument.body).text(fcqueue[0].forword);
+				var stat=new FlashcardPerformance(fcqueue[0]);
+				console.log(stat);
 		}
 		
 		function FlipCard(){
-						 if($("#quizword", slider.contentDocument.body).text()==fcqueue[0].forword){
-										$("#quizword", slider.contentDocument.body).text(fcqueue[0].definition);
+						 if($("#quizword", slider.contentDocument.body).text()===fcqueue[0].forword){
+									$("#quizword", slider.contentDocument.body).text(fcqueue[0].definition);
 							}
 							else{
-									 $("#quizword", slider.contentDocument.body).text(fcqueue[0].forword);
+									$("#quizword", slider.contentDocument.body).text(fcqueue[0].forword);
 							}
 		}
 		
@@ -714,6 +935,7 @@ jetpack.slideBar.append({
 		$("#flipbtn", slider.contentDocument.body).click(function(event){
 			console.log("#flipbtn was clicked");
 			console.log("card flipped");
+			$(".resultbtn", slider.contentDocument.body).css("visibility","visible");
 			FlipCard();
 		});
 		
@@ -721,12 +943,14 @@ jetpack.slideBar.append({
 			console.log("#correctbtn was clicked");
 			numCorrect=numCorrect+1;
 			FCPerfAdd(fcqueue[0], true);
+			$(".resultbtn", slider.contentDocument.body).css("visibility","hidden");
 			GetNextCard();
 		});
 		
 		$("#inccorrectbtn", slider.contentDocument.body).click(function(event){
 			console.log("#inccorrectbtn was clicked");
 			FCPerfAdd(fcqueue[0], false);
+			$(".resultbtn", slider.contentDocument.body).css("visibility","hidden");
 			GetNextCard();
 		});
 		
@@ -756,51 +980,45 @@ jetpack.slideBar.append({
 	<style><![CDATA[
 	body { color: #000000; background: #F2F2F2; margin:0;padding:0; font:1.5em Arial,cambria,palatino,georgia,serif; font-size:13px; font-size-adjust:none; font-style:normal; font-variant:normal;font-weight:normal; line-height:normal;}
 	h1 {font-size:38px ;margin: 10px; text-align: center; vertical-align: middle; }
-	div.hdr1 {position1:absolute; height:68px; width:350px; text-align:center;}
-	sample {background:-moz-repeating-linear-gradient(top left -45deg, black, black 1px, orange 1px, orange 3px) }
 	.tabtable { width: 310px; margin-left:auto; margin-right:auto; border-collapse: collapse;}
-	.tab {font-size:13px; -moz-border-radius-topleft:4px;-moz-border-radius-topright: 4px;	}
-	.btn {font-size:13px; -moz-border-radius:4px;}
-	.paneltab {background:white}
+	.tab { text-align: center; padding: 4px; margin: 0px; width:90px; border-style:solid; border-width:1px; border-color:solid gray; cursor:pointer;font-size:13px; -moz-border-radius-topleft:4px;-moz-border-radius-topright: 4px;}
+	.btn { text-align: center; padding: 4px; margin: 0px; width:90px; border-style:solid; border-width:1px; border-color:solid gray; cursor:pointer;font-size:13px; -moz-border-radius:4px;background: -moz-linear-gradient(top, white, #F2F2F2); }
+	li.btn {display:block;float:left;display:inline; }
 	.bdy { position1:absolute: margin-left:10px; margin-right:10px; height:70%;	 margin:0px; width:350px;}
 	.pane { position:absolute; margin-left:10px; width:330; height:800px; background: grey; border-style: solid; border-width:1px; border-color:gray;}
-	table#editcards{ margin-left:auto;margin-right:auto;border:1px solid gray;}
-	div.scoretab { position1:absolute; right:0px; top:0px; font-weight:bold;margin: 5px;  border-style:solid; border-width:2px;width:120px; }
+	div.scoretab { position:absolute; right:0px; top:0px; font-weight:bold;margin: 5px;  border-style:solid; border-width:2px;width:120px; }
 	ul.btngroup {display:block; list-style-type:none;margin:0;padding:0; margin:7; width:330px}
 	li.tab {display:block;float:left;display:inline; background: -moz-linear-gradient(top, white, #F2F2F2); }//, #F8F0F8
-	span1 {display: block; width:200px;}
-	div#card { background: white ;width:270px;position:absolute;margin-left: 30px;margin-right: 0px;border:5px solid gray;margin-top:10px; height:150px;}
+	div#card { }
 	p#quizword {text-align:center; font-size:25px;}
-	p#quizanswer {text-align:center; font-size:25px;}
-	div#answerbtndiv {margin-left: auto; margin-right: auto;}
-	li.tab:link			  { color: black;  text-decoration:none;  opacity: .7;background: -moz-linear-gradient(top, white, #2B60DE);}
-	li.tab:visited			  { color: black;  text-decoration:none;  opacity: .7;background: -moz-linear-gradient(top, white, #2B60DE);}
-	li.tab:hover			  { color: black; text-decoration:none;	 opacity: 1;background:	 -moz-linear-gradient(top, white, #2B60DE);}
-	li.tab:active			  { color: black; text-decoration:none;	 opacity: 1;background: -moz-linear-gradient(top, white, #2B60DE);}
-	.tab { text-align: center; padding: 4px; margin: 0px; width:90px; border-style:solid; border-width:1px; border-color:solid gray; cursor:pointer;}
-	.btn { text-align: center; padding: 4px; margin: 0px; width:90px; border-style:solid; border-width:1px; border-color:solid gray; cursor:pointer;}
-	li.btn {display:block;float:left;display:inline; background: -moz-linear-gradient(top, white, #F2F2F2); }
+
+	
 	#searchinput {	  padding:10px;	 outline:none;	height:36px;  }	 
 	.focusField {	border:solid 2px #73A6FF;  background:#EFF5FF;	color:#000;	 }	
 	.idleField {  background:#EEE;	 color: #6F6F6F;  border: solid 2px #DFDFDF;  }	 
 	.savedlink { font-size:13px; cursor:pointer; }
+	
+	li.tab:link			  { color: black;  text-decoration:none;  opacity: .7;background: -moz-linear-gradient(top, white, #2B60DE);}
+	li.tab:visited			  { color: black;  text-decoration:none;  opacity: .7;background: -moz-linear-gradient(top, white, #2B60DE);}
+	li.tab:hover			  { color: black; text-decoration:none;	 opacity: 1;background:	 -moz-linear-gradient(top, white, #2B60DE);}
+	li.tab:active			  { color: black; text-decoration:none;	 opacity: 1;background: -moz-linear-gradient(top, white, #2B60DE);}
 	li.savedlink:link			  { color: black;  text-decoration:none;  opacity: .7;color: #2B60DE;}
 	li.savedlink:visited			  { color: black;  text-decoration:none;  opacity: .7;color: #2B60DE;}
 	li.savedlink:hover			  { color: black; text-decoration:none;	 opacity: 1;color:	#2B60DE;}
-	li.savedlink:active			  { color: black; text-decoration:none;	 opacity: 1;color: #2B60DE;}
+	li.savedlink:active			  { color: black; text-decoration:none;	 opacity: 1;color: #2B60DE;}	
 	
 	/*new part*/
-	div.vocabitem {position: absolute;width:320px;height:50px;border-width:1px;border-color:gray;border-style:solid; font-size:18; background: -moz-linear-gradient(top, white, grey);  }
+	div.vocabitem {position: absolute1;width:310px;height:50px;border-width:1px;border-color:gray;border-style:solid; font-size:18; background: -moz-linear-gradient(top, white, grey);  }
 	.vacabelement {margin-top:14;}
 	img {vertical-align: top; } 
-	.trashicon {visibility:visible;margin-right:10;cursor:pointer;}
+	.trashicon {visibility:visible;margin-right:15;cursor:pointer;}
 	.expandcontract {margin-left:10;cursor:pointer;}
 	.vocabexpand {position:absolute;margin-left:46px;margin-top:10px;width:100%;}
 	.translationword {font-style: italic; left:0px;top:0px;width:80;position:absolute;}
 	.vocabword {font-weight:bold;padding:16;}
 	.nextscheduled {font-size:10px;}
-	.samplesentence {font-size:13px;top:40px;width:180;position:absolute;}
-	.weblink {font-size:10px;top:70px;width:180;position:absolute;}
+	.samplesentence {font-size:13px;top:40px;width:250;position:absolute;}
+	.weblink {font-size:10px;top:70px;width:250;position:absolute;}
 	
 	]]></style>
 	<body>
@@ -818,17 +1036,17 @@ jetpack.slideBar.append({
 			<div id="startingout" class="pane" >
 				<div id="languagepanel" style="background:white;margin-left:10;margin-top:10;width:290px; padding:5px; text-align:center; border-style: solid; border-width:2px border-color:black;font-size:17px;font-weight:bold;-moz-border-radius: 3px">
 					 I speak <select id="nativelangselect">
-							  			<option value="en">English</option>
-										<option value="es">Spanish</option>
-										<option value="fr">French</option>
-										<option value="ge">German</option>
+						<option value="en">English</option>
+						<option value="es">Spanish</option>
+						<option value="fr">French</option>
+						<option value="ge">German</option>
 									</select><br/>
 					 I am learning <select id="foreignlangselect">
-							  			<option value="en">English</option>
-										<option value="es">Spanish</option>
-										<option value="fr">French</option>
-										<option value="ge">German</option>
-									</select>
+							<option value="en">English</option>
+							<option value="es">Spanish</option>
+							<option value="fr">French</option>
+							<option value="ge">German</option>
+						</select>
 				</div>
 
 				<div style="float:left;border: solid; border-width:1px; margin-left:10; padding-top:5px; padding-bottom:5px; border-color:black; margin-top:10; background: -moz-linear-gradient(top, white, #F2F2F2); text-align:center;width:310px; font-size:17px;font-weight:bold;">Reading Material Search</div><br/>
@@ -851,6 +1069,7 @@ jetpack.slideBar.append({
 					</ul>
 				</div>
 			</div>
+
 			<div class="pane" id="editcards">
 				<select id="filterselect" style="position:absolute;left:15px;top:15px">
 					<option value="en">No Filter</option>
@@ -858,42 +1077,29 @@ jetpack.slideBar.append({
 					<option value="fr">Performance</option>
 			   </select>
 				<input style="position:absolute;right:15;top:15;" type="button" value="Create New Quiz"/>
-				<div class="filterpanel" style="position:absolute; width:310px; top:50; height:230px; border-width:1px; border-color:black; border-style:solid; margin-left:10;"/>
-				
-				<div id="editcarddiv" style="position:absolute;top:290px;width:310px;height:400px;border-width:1px;border-color:black;border-style:solid;overflow-y:auto;overflow-x:hidden;">
-					<div class="vocabitem">
-						<div class="vacabelement">
-							<img class="expandcontract" src="http://www.langladder.com/img/plus-1.png"/>
-							<span class="vocabword">asdasdasdasd</span>
-							<div style="float:right">
-								<img class="gradeicon" src="http://www.langladder.com/img/circle-1.png" /><img class="trashicon" src="http://www.langladder.com/img/trash-2.png" />
-							</div>
-						</div>
-						<div class="vocabexpand">
-							<div class="translationword" >dog</div>
-							<div class="nextscheduled" style="left:180;top:;width:80;position:absolute;">next scheduled:<br/> 4 days</div>
-							<div class="samplesentence">El pero esta un pero bueno</div>
-							<div class="weblink">web.usa.com </div>
-						</div>
-					</div>
+				<div class="filterpanel" style="position:absolute; width:310px; top:50; height:230px; border-width:1px; border-color:black; border-style:solid; margin-left:10;">
+				</div>
+				<div id="editcarddiv" style="position:absolute;margin-left:10;top:290px;width:310px;height:400px;border-width:1px;border-color:black;border-style:solid;overflow-y:auto;overflow-x:hidden;">
 				</div>
 			</div>
-			<div id="quizpane"	class="pane">
-				<div id="newquizbtn" class="btn" style="width:120px">New Quiz</div> 
-				<div class="scoretab" id="scoreval" >Score:</div>	 
-				<div id="card">
-					<div class="cardclass"	 style="position:absolute;top:60;left:100;;text-align:center;">	 
+
+			<div class="pane" id="quizpane"	>
+				<div id="newquizbtn" class="btn" style="position:absolute;width:120px;top:30">New Quiz</div> 
+				<div class="scoretab" id="scoreval" style="top:30">Score:</div>	 
+				<div id="card" style="background: white ;width:270px;position:absolute;top:150;left:30;border-width:1px;border-color:black;border-style:solid;height:150px;">
+					<div class="cardclass"	 style="position:absolute;top:45;width:270;left:0;text-align:center;">	 
 						<h2 id="quizword">Foreign Word</h2>
 					</div>
 				</div>
-				<table class="cardclass" style="position:absolute; width:85%; left:30; top:400; magin:30">
+				<table class="cardclass" style="position:absolute; width:85%; left:10; top:400; magin:30">
 					<tr>
-						<td><li class=" btn" id="correctbtn">Correct</li></td>
+						<td><li class=" btn resultbtn" id="correctbtn">Correct</li></td>
 						<td><li class=" btn" id="flipbtn" >Flip</li></td>
-						<td><li class=" btn" id="inccorrectbtn">Incorrect</li></td>
+						<td><li class=" btn resultbtn" id="inccorrectbtn">Incorrect</li></td>
 					</tr>
 				</table>
 			</div>
+			
 			<div id="settingpane" class="pane" >
 				<table>
 					<tr><td>Native Language:</td><td> <select id="languageselect">
