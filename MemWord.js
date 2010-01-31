@@ -9,9 +9,9 @@
 **TODOS
 *Reorganize CSS trees and eliminate unused code blocks
 *add filtering
+*
 *Finalize flashcard graphics
-*investigate use of canvas UI element
-*alphabetical sorting
+*
 */
 
 var manifest = {  
@@ -75,6 +75,10 @@ function FlashcardPerformance(fc){
 	this.numCardsInRow=numRightInRow(fc,new Date("1/1/1900"));
 }
 
+/**
+* Returns the long form of a language by passing the language code
+*
+*/
 function getLangByCode(langcode){
 	var returnLang;
 	for(var elem in countrycodes){
@@ -86,14 +90,16 @@ function getLangByCode(langcode){
 	return returnLang;
 }
 
+/**
+* Returns the exponential average of a flashcard based on a, the exponenital multiplier
+*
+*/
 function getExponentialAverage(fc, a){
 	//console.log(fc);
 	var numerator=0;
 	var denominator=0;
 	for(i=fc.history.length-1;i>=0;i--){
 		var days=getDaysAgoFromDate(fc.history[i].date);
-		//console.log("date "+ fc.history[i].date);
-		//console.log("days "+days);
 		var mult=Math.pow(a*(1-a), days);
 		denominator+=mult;
 		
@@ -101,14 +107,14 @@ function getExponentialAverage(fc, a){
 			numerator+=mult;
 		}
 	}
-	//console.log(numerator);
-	//console.log(denominator);
+
 	return numerator/denominator;
 }
 
-
-
-
+/**
+* Returns a color based on an exponential average
+*
+*/
 function getColorGrade(score){
 	var r,g,b;
 	
@@ -117,8 +123,6 @@ function getColorGrade(score){
 	}
 	
 	var adjScore=(score-0.6)/(1.0-0.6);
-	
-	console.log(score+"   "+adjScore);
 	
 	if(adjScore<0.5){
 		r=255.0;
@@ -136,6 +140,7 @@ function getColorGrade(score){
 
 var gSlider=0; //global variable to point to the slider context
 var highlightWord=false; //global variable to set the tool to only highlight words once
+var gFilteredItems=[];
 
 //CONST used for flashcard quiz
 var backShuffleCards=3;
@@ -167,7 +172,6 @@ if(settings["nativelang"]==undefined){
 * Tracks which page the user is reading
 */
 jetpack.tabs.onFocus(function(event){
-	console.log(this.url);
 	currentURL=this.url;
 });
 
@@ -178,7 +182,6 @@ jetpack.tabs.onFocus(function(event){
 jetpack.tabs.onReady(function(event){
 	currentURL=this.url;
 	if(highlightWord){
-		//showJetpackNote(this.url,"test");
 		highlightVocabWords(this.contentDocument);
 		highlightWord=false;
 	}
@@ -212,8 +215,6 @@ function generateScore(fc){
 		}
 	}
 	
-	//console.log("num in a row "+perf.numCardsInRow);
-	//console.log(score);
 	return score;
 }
 
@@ -226,13 +227,11 @@ function FCScores(){
 	this.scoremin={};
 	this.totalScore=0;
 	for ( var elem in flashcards ){
-		console.log(flashcards[elem]);
 		this.scoremin[elem]=this.totalScore;
 		this.scores[elem]=generateScore(flashcards[elem]);
 		this.totalScore+=this.scores[elem];
 	}
 	
-	console.log(this);
 	/*for(var elem in flashcards){
 		this.fcpropbs[elem]=fcscores[elem]/totalScore;
 	}*/
@@ -256,12 +255,11 @@ function adjustAddFCScore(fc,fcscore){
 }
 
 /**
-* 
+* Returns the next card to be shown in the review section of the application
 *
 */
 function getNextCard(){
 	var randNum=getRandomNumber(fcScores.totalScore);
-	console.log("Random is "+randNum);
 	var fcard;
 	for(var elem in flashcards){
 		if(randNum>=fcScores.scoremin[elem] && randNum < (fcScores.scoremin[elem]+fcScores.scores[elem])){
@@ -297,7 +295,7 @@ function setUpPerfNumbers(fc){
 	}
 	var val=getExponentialAverage(fc, 0.5);
 	var color=getColorGrade(val);
-	console.log("color="+color);
+
 	$("#perfbox",gSlider.contentDocument.body).css("-moz-box-shadow", color +" 2px 2px 4px" );  //"background-color",color);
 }
 
@@ -377,7 +375,7 @@ jetpack.statusBar.append({
 			var arr = jQuery.grep(savedsites, function(n, i){
 				return (n.url==jetpack.tabs.focused.url);
 			});
-			console.log(arr);
+
 			if(arr.length==0){
 				savedsites.push({name: jetpack.tabs.focused.contentDocument.title, url: jetpack.tabs.focused.url});
 				refreshFavorites();
@@ -398,17 +396,16 @@ jetpack.menu.context.page.add({
    command: function (event) { 
 		var sentence="";
 		var vocabWord=jetpack.selection.text.trim();
-		jetpack.selection.html="<span id='"+ vocabWord.toLowerCase() +"' class='vocabword' style='background: red'>" +
+		jetpack.selection.html="<span id='"+ vocabWord.toLowerCase() +"' class='vocabword' style='background: red; color: black'>" +
 		jetpack.selection.html + "</span>";
 		var doc=jetpack.tabs.focused.contentDocument;
 		var parents=$("#"+vocabWord.toLowerCase(),doc).parents();
-		//console.log(parents);
+
 		for(i=1;i<parents.length;i++){
 			if(parents[i].tagName=="P"||parents[i].tagName=="DIV"||parents[i].tagName=="BODY"||parents[i].tagName=="HTML"){
 				var innertext=parents[i].textContent;
 				var regexTxt=new RegExp("[^.]+"+vocabWord+"[^.]+","im");
 				sentence=regexTxt.exec(innertext);
-				console.log(sentence);
 				break;
 			}
 		}
@@ -424,34 +421,18 @@ jetpack.menu.context.page.add({
 function FCPerfAdd(flashcard, wascorrect){
 	var d=new Date();
 	flashcard.history.push({date: d, correct: wascorrect}); 
-	console.log(flashcard);
 }
-
-
-
-/**
-* Adds the 
-*/
-/*
-function FCQuizResultsAdd(flashcard, level, perc, total){
-	var d=new Date();
-	flashcard.quizResults.push({date: d, level: level, percentage: perc, totalreps: total}); 
-   	console.log(flashcard);
-}
-*/
 
 /**
 * Returns the number of times correct in a row that a user has had in a row
 */
 function numRightInRow(fc, lastBegin){
 	var numRight=0;
-	//console.log("*******************************"+fc.history.length)
+
 	for(i=fc.history.length-1;i>=0;i--){
-		//console.log("history is "+fc.history[i].date);
 
 		if(fc.history[i].correct){//  && fc.history[i].date>=lastBegin){
 			 numRight=numRight+1;
-			 //console.log("num going up " + numRight);
 	 	}else{
 			break;
 		}
@@ -518,20 +499,15 @@ function getDaysAgoFromDate(dt){
 }
 
 
-function handleNextCardSelect(){
-	
-}
-
 /**
 * 
 */
+/*
 function handleResults(fc, lastBegin){
 	var numinarow=numRightInRow(fc,lastBegin);
 	var sessionStats=statsSession(fc,lastBegin);
 	var sessionPerf=sessionStats.numCorrect/sessionStats.numReps;
-	console.log(numinarow);
-	console.log(sessionStats);
- 
+
 	if(numinarow>=timesCorrectCutoff){
 		if(sessionStats.sessionPerf<.6){
 			FCQuizResultsAdd(fc, 1, sessionPerf, sessionStats.numReps);
@@ -546,9 +522,11 @@ function handleResults(fc, lastBegin){
 	}
 }
 
+
 /**
 * Inserts an item in an array in a certain position
 */
+/*
 function insertInArray(item, array, position){
 	if(position>array.length){
 		position=array.length;
@@ -559,20 +537,20 @@ function insertInArray(item, array, position){
 	var returnArray=Array.concat(beginArray, endArray);
 	return returnArray;
 }
-
+*/
 /**
 * Translates word from sourcelang into destlang.  Adds those and sentence into flashcard
 */
 function translateStringFromPage(word, sourcelang, destlang, sentence){		
 	var translation;
-	console.log(word+sourcelang+destlang);
+
 	$.getJSON("http://ajax.googleapis.com/ajax/services/language/translate?v=1.0&q=" + word	 +"&langpair="+sourcelang+"%7C"+destlang,
 	function(data){
 		translation=data.responseData.translatedText.trim().toLowerCase();
 		flashcards[word]=new Flashcard(word,translation,sentence,currentURL);
-		console.log(flashcards);
 		showJetpackNote(word+"="+translation+"\r"+sentence,"Word Added");
 		refreshVocabwords();
+		refreshUrlFilter();
 	});
 }
  
@@ -588,15 +566,6 @@ function translateStringForSearch(word, sourcelang, destlang){
 			$("#searchinput",gSlider.contentDocument.body).val(translation);
 		}
 	});
-	/*
-	$.getJSON("http://ajax.googleapis.com/ajax/services/language/translate?v=1.0&q=" + word	 +"&langpair="+sourcelang+"%7C"+destlang,
-	function(data){
-		translation=data.responseData.translatedText.trim().toLowerCase();
-		flashcards[word]=new Flashcard(word,translation,sentence,currentURL);
-		console.log(flashcards);
-		showJetpackNote(word+"="+translation+"\r"+sentence,"Word Added");
-		refreshVocabwords();
-	});*/
 }
 
 /**
@@ -610,6 +579,10 @@ function showJetpackNote(body, title){
 	});
 }
  
+/**
+* Returns random number between 0 and maxNumber
+* 
+*/
 function getRandomNumber(maxNumber){
 	return Math.random()*maxNumber;
 }
@@ -803,6 +776,49 @@ $.editableFactory = {
 }
 })(jQuery);
 
+
+function refreshUrlFilter(){
+	var urls={};
+	var uniqueUrls=[];
+	
+	for(elem in flashcards){
+		urls[flashcards[elem].url]="nonesense";
+	}
+	for(key in urls){
+		uniqueUrls.push(key);
+	}
+	
+	uniqueUrls.sort();
+	//console.log(uniqueUrls);
+	$(".filterpanel", gSlider.contentDocument.body).empty();
+
+	for (i=0;i<uniqueUrls.length;i++){
+		$(".filterpanel", gSlider.contentDocument.body).append("<div class='urlfilter' style='cursor:pointer;padding:5;width:100%;height:25;background:white;overflow:hidden;border-style: solid; border-width:1px; border-color:black'>"+uniqueUrls[i]+"</div>");
+	}
+	
+
+	$('.urlfilter', gSlider.contentDocument.body).click(function(){
+		if($(this).data("clicked")==1){
+			$(this).data("clicked","0");
+			$(this).css("background","white");
+			for(i=0;i<gFilteredItems.length;i++){
+				if(gFilteredItems[i]==$(this).text()){
+					gFilteredItems.splice(i,1);
+					break;
+				}
+			}
+		}else{
+			$(this).data("clicked","1");
+			$(this).css("background","#ECE5B6");
+			gFilteredItems.push($(this).text());
+		}
+		refreshVocabwords();
+	
+	});
+}
+
+
+
 /**
 * Refreshes the favorites pane
 * 
@@ -827,7 +843,6 @@ function refreshFavorites(){
 	});
 	
 	$('.editlink', gSlider.contentDocument.body).click(function(event){
-		console.log("edit this");
 		$(this).parent().parent().find(".savedlink").unbind();
 		$(this).parent().parent().find(".savedlink").editable({onSubmit:onEditLink, context: gSlider.contentDocument.body});
 		$(this).parent().parent().find(".savedlink").triggerHandler("click");
@@ -836,7 +851,6 @@ function refreshFavorites(){
 		
 	});
 	$('.deletelink', gSlider.contentDocument.body).click(function(event){
-		console.log("delete this");
 		var savedSite=$(this).parent().parent().attr( "id" );
 		
 		for(i=0;i<savedsites.length;i++){
@@ -850,6 +864,10 @@ function refreshFavorites(){
 	});
 }
 
+/**
+* 
+* Callback when a saved bookmark is clicked
+*/
 function onEditLink(content){
 	for(i=0;i<savedsites.length;i++){
 		if(savedsites[i].url==$(this).attr("id")){
@@ -873,7 +891,6 @@ function onEdit1(content){
 	switch($(this).attr( "class" )){
 		case "vocabword":
 			vocabword=$(this).parent().parent().attr("id");
-			console.log(vocabword);
 			var tempCard=flashcards[vocabword];
 			tempCard.forword=content.current;
 			delete flashcards[vocabword];
@@ -890,12 +907,11 @@ function onEdit1(content){
 			break;
 		
 	}
-	console.log(vocabword);
+
 	//console.log($(this).parents("div"));//.attr("id")".vocabitem"
   	//console.log(content.current+':'+content.previous)
 	//console.log(this);
 }
-
 
 /**
 * Refreshes the vobab word pane
@@ -911,16 +927,18 @@ function refreshVocabwords(){
 	for (i=0;i<keys.length;i++){		
 		var elem=keys[i];
 		
-		var html='<div class="vocabitem" id="'+flashcards[elem].forword+'"><div class="vacabelement"><img class="expandcontract" src="http://www.langladder.com/img/plus-1.png"/>';
-		html=html+'<span class="vocabword">'+ flashcards[elem].forword +'</span><div style="float:right"><span class="gradecircle" style="position:absolute; background:red; width:16; height:16; -moz-border-radius: 8px"/>';
-		html=html+'<img class="trashicon" style="position:relative;float:right;left:15;margin-right:32" src="http://www.langladder.com/img/trash-2.png" /></div></div><div class="vocabexpand">';
-		html=html+'<div class="translationword" >'+ flashcards[elem].definition +'</div>';
-		html=html+'<div class="nextscheduled" style="left:180;top:;width:80;position:absolute;"></div>';
-		html=html+'<div class="samplesentence" style="overflow:hidden">'+ flashcards[elem].sentence +'</div>';
-		html=html+'<div class="weblink linkUrl">'+ flashcards[elem].url +' </div></div></div>';
-		$("#editcarddiv", gSlider.contentDocument.body).append(html);
-	};
-	
+		if( gFilteredItems.indexOf(flashcards[elem].url)>=0||gFilteredItems.length==0){
+			var html='<div class="vocabitem" id="'+flashcards[elem].forword+'"><div class="vacabelement"><img class="expandcontract" src="http://www.langladder.com/img/plus-1.png"/>';
+			html=html+'<span class="vocabword">'+ flashcards[elem].forword +'</span><div style="float:right"><span class="gradecircle" style="position:absolute; background:red; width:16; height:16; -moz-border-radius: 8px"/>';
+			html=html+'<img class="trashicon" style="position:relative;float:right;left:15;margin-right:32" src="http://www.langladder.com/img/trash-2.png" /></div></div><div class="vocabexpand">';
+			html=html+'<div class="translationword" >'+ flashcards[elem].definition +'</div>';
+			html=html+'<div class="nextscheduled" style="left:180;top:;width:80;position:absolute;"></div>';
+			html=html+'<div class="samplesentence" style="overflow:hidden">'+ flashcards[elem].sentence +'</div>';
+			html=html+'<div class="weblink linkUrl">'+ flashcards[elem].url +' </div></div></div>';
+			$("#editcarddiv", gSlider.contentDocument.body).append(html);
+		}
+	}
+
 	$(".deletebtn", gSlider.contentDocument.body).click(function(event){
 		 delete flashcards[$(this).parent().parent().attr("id")];
 		 $(this).parent().parent().toggle();//.css("border","9px solid red");
@@ -946,7 +964,6 @@ function refreshVocabwords(){
 
 	$('.vocabexpand', gSlider.contentDocument.body).hide();
 	$(".expandcontract", gSlider.contentDocument.body).click(function(){
-		console.log($(this).attr('src'));
 		if($(this).attr('src')==='http://www.langladder.com/img/plus-1.png'){
 			expandItem($(this).parent().parent());
 		}
@@ -959,10 +976,11 @@ function refreshVocabwords(){
 		var text=$(this).innerText;
 		openNewTab(text, true);
 	});
-
+/*
 	$('#filterselect', gSlider.contentDocument.body).change(function(){
 	  	console.log($(this));
 	});
+*/
 
 	$("img.trashicon", gSlider.contentDocument.body).hover(function(){
 			$(this).attr("src", "http://www.langladder.com/img/trash-1.png");
@@ -974,6 +992,8 @@ function refreshVocabwords(){
 		delete flashcards[$(this).parent().parent().parent().attr("id")];
 		$(this).parent().parent().parent().hide();
 	});
+	
+	
 }
 
 
@@ -983,7 +1003,6 @@ function refreshVocabwords(){
 * 
 */
 function expandItem(element){
-	console.log("expand");
 	element.find('.expandcontract').attr('src','http://www.langladder.com/img/minus-1.png');
 	element.find('.vocabexpand').show();
 	element.height( 170 );
@@ -994,7 +1013,6 @@ function expandItem(element){
 * 
 */
 function contractItem(element){
-	console.log("collapse");
 	element.find('.vocabexpand').hide();
 	element.find('.expandcontract').attr('src','http://www.langladder.com/img/plus-1.png');
 	element.height( 50 );
@@ -1006,7 +1024,6 @@ jetpack.slideBar.append({
 	persist: true,
 	onClick: function (slider) {
 		gSlider=slider;
-		console.log(jetpack.tabs);
 	
 		//***************Sets buttons and tabs at top to proper positions***********
 		$(".tab", slider.contentDocument.body).css("font-weight","normal");
@@ -1085,13 +1102,11 @@ jetpack.slideBar.append({
 		
 		$("#nativelangselect", slider.contentDocument.body).change(function(event){
 			settings["nativelang"]=countrycodes[$(this).val()];
-			console.log(countrycodes[$(this).val()]);
 			$('#searchinput', slider.contentDocument.body).val("search here in " + getLangByCode(settings["learninglang"]) + " or " + getLangByCode(settings["nativelang"]));
 		});
 		
 		$("#foreignlangselect", slider.contentDocument.body).change(function(){ 
 			settings["learninglang"]=countrycodes[$(this).val()];
-			console.log(countrycodes[$(this).val()]);
 			$('#searchinput', slider.contentDocument.body).val("search here in " + getLangByCode(settings["learninglang"]) + " or " + getLangByCode(settings["nativelang"]));
 		});
 		
@@ -1100,12 +1115,10 @@ jetpack.slideBar.append({
 	
 		//***********Handles functions on see cards tab**********************************/
 		refreshVocabwords();
+		refreshUrlFilter();
 		$('.linkUrl', slider.contentDocument.body).hover(function() {	
-			//console.log("hovering");
-			//$(this).css("font-weight","bold");
 			$(this).css("color","blue");
 		},function(){
-			//$(this).css("font-weight","normal");
 	 		$(this).css("color","black");
 		});
 	
@@ -1118,8 +1131,6 @@ jetpack.slideBar.append({
 	
 		
 		$("#card", slider.contentDocument.body).one( "click" ,function(event){
-			console.log("#newquizbtn was clicked");
-			
 			lastBegin=new Date();
 			numCorrect=0;
 			numSeen=0;
@@ -1130,12 +1141,7 @@ jetpack.slideBar.append({
 		
 		function SetUpCard(){
 			numSeen=numSeen+1;
-			
 			currentCard=getNextCard();
-			console.log("0.5 average is " + getExponentialAverage(currentCard, 0.5));
-			console.log("0.25 average is " + getExponentialAverage(currentCard, 0.25));
-			console.log("0.1 average is " + getExponentialAverage(currentCard, 0.1));
-			
 			setUpPerfNumbers(currentCard);
 			
 			if(true)
@@ -1154,13 +1160,11 @@ jetpack.slideBar.append({
 		}
 		
 		$("#flipbtn", slider.contentDocument.body).click(function(event){
-			console.log("card flipped");
 			$(".resultbtn", slider.contentDocument.body).css("visibility","visible");
 			FlipCard();
 		});
 		
 		$("#correctbtn", slider.contentDocument.body).click(function(event){
-			console.log("#correctbtn was clicked");
 			numCorrect=numCorrect+1;
 			FCPerfAdd(currentCard, true);
 			$(".resultbtn", slider.contentDocument.body).css("visibility","hidden");
@@ -1169,7 +1173,6 @@ jetpack.slideBar.append({
 		});
 		
 		$("#inccorrectbtn", slider.contentDocument.body).click(function(event){
-			console.log("#inccorrectbtn was clicked");
 			FCPerfAdd(currentCard, false);
 			$(".resultbtn", slider.contentDocument.body).css("visibility","hidden");
 			adjustAddFCScore(currentCard,fcScores);
@@ -1186,7 +1189,6 @@ jetpack.slideBar.append({
 		$("#reverseselect", slider.contentDocument.body).val(settings["reversecards"]);
 		$("#reverseselect", slider.contentDocument.body).change(function(event){
 			settings["reversecards"]=$(this).val();
-			console.log($(this));//.val());
 		});
 		
   },
@@ -1227,7 +1229,7 @@ jetpack.slideBar.append({
 
 	
 	/*new part*/
-	div.vocabitem {position1: absolute;width:310px;height:50;border-width:1px;border-color:gray;border-style:solid; font-size:18; background: -moz-linear-gradient(top, white, grey);  }
+	div.vocabitem {position1: absolute;width:310px;height:50;border-width:1px;border-color:gray;border-style:solid; font-size:18; background: -moz-linear-gradient(top, white, white);  }
 	.vacabelement {margin-top:14;}
 	img {vertical-align: top; } 
 	.trashicon {visibility:visible;margin-right:15;cursor:pointer;}
@@ -1272,7 +1274,7 @@ jetpack.slideBar.append({
 						</select>
 				</div>
 
-				<div style="float:left;border: solid; border-width:1px; margin-left:10; padding-top:5px; padding-bottom:5px; border-color:black; margin-top:10; background: -moz-linear-gradient(top, white, #F2F2F2); text-align:center;width:310px; font-size:17px;font-weight:bold;">Reading Material Search</div><br/>
+				<div style="float:left;border: solid; border-width:2px; margin-left:10; padding-top:5px; padding-bottom:5px; border-color:black; margin-top:10; background: -moz-linear-gradient(top, white, grey); text-align:center;width:310px; font-size:17px;font-weight:bold;">Reading Material Search</div><br/>
 				<div id="learningpanel" style="background:white;margin-left:10;padding:0;width:310px; height:140px; border-style: solid; border-width:1px; border-color:solid gray;font-size:17px;font-weight:bold">
 					<input id="searchinput" name="searchinput" type="text" style="width:290; margin-top:20;margin-left:10;margin-right:10;margin-bottom:10"	value="search here" />
 					<ul class="btngroup">
@@ -1282,7 +1284,7 @@ jetpack.slideBar.append({
 					</ul>
 				</div>
 
-				<div style="float:left;border: solid; border-width:1px; margin-left:10; padding-top:5px; padding-bottom:5px; border-color:black; margin-top:10; background: -moz-linear-gradient(top, white, #F2F2F2); text-align:center;width:310px; font-size:17px;font-weight:bold;">Saved Material</div><br/>
+				<div style="float:left;border: solid; border-width:2px; margin-left:10; padding-top:5px; padding-bottom:5px; border-color:black; margin-top:10; background: -moz-linear-gradient(top, white, grey); text-align:center;width:310px; font-size:17px;font-weight:bold;">Saved Material</div><br/>
 				<div id="learningpanel" style="background:white;margin-left:10;padding:0;width:310px; height:330px; border-style: solid; border-width:1px; border-color:solid gray;overflow-y:auto;overflow-x:hidden;">
 					<ul id="savedlinksul" style="list-style-type:disc:display-type:block">
 						<li class="savedlink" id="booksearch">Link 1</li>
@@ -1292,20 +1294,16 @@ jetpack.slideBar.append({
 			</div>
 
 			<div class="pane" id="editcards">
-				<div id="editcarddiv" style="position:absolute;margin-left:10;top:20px;width:310px;height:500px;border-width:1px;border-color:black;border-style:solid;overflow-y:auto;overflow-x:hidden;">
+				<div style="position:absolute;border: solid; top:0;left:0; border-width:2px; margin-left:10; padding-top:5px; padding-bottom:5px; border-color:black; margin-top:10; background: -moz-linear-gradient(top, white, grey); text-align:center;width:310px; font-size:17px;font-weight:bold;">Vocabulary Words</div><br/>
+				<div id="editcarddiv" style="position:absolute;margin-left:10;top:43px;width:310px;height:500px;border-width:1px;border-color:black;border-style:solid;overflow-y:auto;overflow-x:hidden;">
 				</div>
-				<select id="filterselect" style="position:absolute;left:15px;top:550">
-					<option value="en">No Filter</option>
-					<option value="es">Website</option>
-					<option value="fr">Performance</option>
-			   </select>
-				<input style="position:absolute;right:15;top:550;" type="button" value="Create New Quiz"/>
-				<div class="filterpanel" style="position:absolute; width:310px; top:600; height:130px; border-width:1px; border-color:black; border-style:solid; margin-left:10;">
+				<div style="position:absolute; border: solid; border-width:2px; margin-left:0; top:550; left:10; padding-top:5px; padding-bottom:5px; border-color:black; margin-top:10; background: -moz-linear-gradient(top, white, grey); text-align:center;width:310px; font-size:17px;font-weight:bold;">Filter by Website</div><br/>
+				<div class="filterpanel" style="position:absolute; width:310px; top:592; height:130px; border-width:1px; border-color:black; border-style:solid; margin-left:10;overflow-y:auto;overflow-x:hidden">
 				</div>
 			</div>
 
 			<div class="pane" id="quizpane"	>
-				<div id="perfbox" class="cardclass" style="position:absolute;padding:5;left:55;top:50;width:215;background:white;-moz-box-shadow: black 2px 2px 4px;">
+				<div id="perfbox" class="cardclass" style="position:absolute;padding:5;left:55;top:50;width:215; height:20; border-width:1px; border-color:black; border-style:solid; background:white;-moz-box-shadow: black 2px 2px 4px;">
 					<img class="perfpic" id="pp1" src="http://www.langladder.com/img/thumbs-down-1.png"/>
 					<img class="perfpic" id="pp2" src="http://www.langladder.com/img/thumbs-down-1.png"/>
 					<img class="perfpic" id="pp3" src="http://www.langladder.com/img/thumbs-down-1.png"/>
