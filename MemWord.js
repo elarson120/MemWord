@@ -8,7 +8,7 @@
 ***********************************************************
 **TODOS
 *Reorganize CSS trees and eliminate unused code blocks
-*Fix Vocabulary table bugs and add filtering
+*add filtering
 *Finalize flashcard graphics
 *investigate use of canvas UI element
 *alphabetical sorting
@@ -60,7 +60,6 @@ function Flashcard(forword, definition, sentence, url){
 */
 function FlashcardPerformance(fc){
 	var now=new Date();
-	console.log("flashcard perf was called");
 	this.hasStudied=fc.history.length>0;
 	this.lifetimeStats=statsSession(fc,"1/1/1900");
 	this.onemonthStats=statsSession(fc,getDaysAgo(30));
@@ -73,10 +72,67 @@ function FlashcardPerformance(fc){
 	{
 		this.lastDayStudied=false;
 	}
-	this.numCardsInRow=numRightInRow(fc,"1/1/1900");
+	this.numCardsInRow=numRightInRow(fc,new Date("1/1/1900"));
+}
+
+function getLangByCode(langcode){
+	var returnLang;
+	for(var elem in countrycodes){
+		if(countrycodes[elem]==langcode){
+			returnLang=elem;
+			break;
+		}
+	}
+	return returnLang;
+}
+
+function getExponentialAverage(fc, a){
+	//console.log(fc);
+	var numerator=0;
+	var denominator=0;
+	for(i=fc.history.length-1;i>=0;i--){
+		var days=getDaysAgoFromDate(fc.history[i].date);
+		//console.log("date "+ fc.history[i].date);
+		//console.log("days "+days);
+		var mult=Math.pow(a*(1-a), days);
+		denominator+=mult;
+		
+		if(fc.history[i].correct){
+			numerator+=mult;
+		}
+	}
+	//console.log(numerator);
+	//console.log(denominator);
+	return numerator/denominator;
 }
 
 
+
+
+function getColorGrade(score){
+	var r,g,b;
+	
+	if(score<.6){
+		score=0;
+	}
+	
+	var adjScore=(score-0.6)/(1.0-0.6);
+	
+	console.log(score+"   "+adjScore);
+	
+	if(adjScore<0.5){
+		r=255.0;
+		g=255.0*(adjScore*2.0);
+		b=0;
+	}else{
+		r=255.0*((1-adjScore)*2.0);
+		g=255.0;
+		b=0;
+	}
+	
+	var rgbcolor="rgb( " + Math.round(r) + " , " + Math.round(g) + " , " + Math.round(b) + " )";
+	return rgbcolor;
+}
 
 var gSlider=0; //global variable to point to the slider context
 var highlightWord=false; //global variable to set the tool to only highlight words once
@@ -101,10 +157,10 @@ var currentCard;
 
 // If there are no languages set, the defaul speak English and learning Spanish is used
 if(settings["learninglang"]==undefined){
-settings["learninglang"]="es";
+	settings["learninglang"]="es";
 }
 if(settings["nativelang"]==undefined){
-settings["nativelang"]="en";
+	settings["nativelang"]="en";
 }
 
 /**
@@ -140,9 +196,9 @@ function generateScore(fc){
 		score=6;
 	}else if(perf.numCardsInRow<=4){
 		score=4;
-	}else if(perf.numCardInRow<=8){
+	}else if(perf.numCardsInRow<=8){
 		score=2;
-	}else if(perf.numCardInRow<=16){
+	}else if(perf.numCardsInRow<=16){
 		score=1;
 	}else{ 
 		score=0.5;
@@ -155,7 +211,9 @@ function generateScore(fc){
 			score*=1.5;
 		}
 	}
-	console.log("score is "+score);
+	
+	//console.log("num in a row "+perf.numCardsInRow);
+	//console.log(score);
 	return score;
 }
 
@@ -215,6 +273,33 @@ function getNextCard(){
 	return fcard;
 }
 
+/**
+* 
+*
+*/
+function setUpPerfNumbers(fc){
+	var perf=fc.history;
+	
+	for(i=1;i<=10;i++){
+		var itemNum=perf.length-i;
+		var id="pp"+i;
+		
+		if(i>=perf.length){
+			$("#"+id,gSlider.contentDocument.body).hide();
+		}else{
+			$("#"+id,gSlider.contentDocument.body).show()
+			if(perf[itemNum].correct){
+				$("#"+id,gSlider.contentDocument.body).attr( "src", "http://www.langladder.com/img/thumbs-up-1.png" );
+			}else{
+				$("#"+id,gSlider.contentDocument.body).attr( "src", "http://www.langladder.com/img/thumbs-down-1.png" );
+			}
+		}
+	}
+	var val=getExponentialAverage(fc, 0.5);
+	var color=getColorGrade(val);
+	console.log("color="+color);
+	$("#perfbox",gSlider.contentDocument.body).css("-moz-box-shadow", color +" 2px 2px 4px" );  //"background-color",color);
+}
 
 /**
 * Search a body of html text for a search term.  If the term is found, a 
@@ -266,7 +351,11 @@ function highlightVocabWords(context){
 	var htmlText=$("body",context).html();
 
 	for ( var elem in flashcards){	
-		htmlText=doHighlight(htmlText,flashcards[elem].forword);
+		var val = getExponentialAverage( flashcards[elem], 0.2);
+		var color = getColorGrade( val );
+		var highlightStartTag="<span style='color:black;background-color:"+color+";'>"
+		var highlightEndTag="</span>";
+		htmlText=doHighlight(htmlText, flashcards[elem].forword, highlightStartTag, highlightEndTag);
 	}
 	try{
 	$("body",context).html(htmlText);
@@ -284,20 +373,20 @@ jetpack.statusBar.append({
 	html: '<P style="padding-top:0px; padding-bottom:20px; margin:0px; cursor:pointer;">Add Site</P>', 
 	width: 50,
 	onReady: function(widget){	
-	 $("P",widget).click(function(){
-				var arr = jQuery.grep(savedsites, function(n, i){
-					return (n.url==jetpack.tabs.focused.url);
-				});
-				console.log(arr);
-				if(arr.length==0){
-					savedsites.push({name: jetpack.tabs.focused.contentDocument.title, url: jetpack.tabs.focused.url});
-					refreshFavorites();
-					showJetpackNote(jetpack.tabs.focused.contentDocument.title + " saved.","Saved");
-				}else{
-					showJetpackNote("You already saved "+ jetpack.tabs.focused.contentDocument.title + ".","Not Saved");
-				}
+		$("P",widget).click(function(){
+			var arr = jQuery.grep(savedsites, function(n, i){
+				return (n.url==jetpack.tabs.focused.url);
 			});
-		}
+			console.log(arr);
+			if(arr.length==0){
+				savedsites.push({name: jetpack.tabs.focused.contentDocument.title, url: jetpack.tabs.focused.url});
+				refreshFavorites();
+				showJetpackNote(jetpack.tabs.focused.contentDocument.title + " saved.","Saved");
+			}else{
+				showJetpackNote("You already saved "+ jetpack.tabs.focused.contentDocument.title + ".","Not Saved");
+			}
+		});
+	}
 });
 
 /**
@@ -323,7 +412,7 @@ jetpack.menu.context.page.add({
 				break;
 			}
 		}
-		translateString(vocabWord.toLowerCase(), settings["learninglang"], settings["nativelang"],sentence);
+		translateStringFromPage(vocabWord.toLowerCase(), settings["learninglang"], settings["nativelang"],sentence);
 	 }
 }); 
 
@@ -356,18 +445,19 @@ function FCQuizResultsAdd(flashcard, level, perc, total){
 */
 function numRightInRow(fc, lastBegin){
 	var numRight=0;
+	//console.log("*******************************"+fc.history.length)
 	for(i=fc.history.length-1;i>=0;i--){
-		console.log("history is "+fc.history[i].date);
+		//console.log("history is "+fc.history[i].date);
 
-		 if(fc.history[i].correct  && fc.history[i].date>=lastBegin){
-				 numRight=numRight+1;
-					 console.log("num going up " + numRight);
-			 }else{
-					break;
-			 }
-	 }
+		if(fc.history[i].correct){//  && fc.history[i].date>=lastBegin){
+			 numRight=numRight+1;
+			 //console.log("num going up " + numRight);
+	 	}else{
+			break;
+		}
+	}
 	
-	 return numRight;
+	return numRight;
 }
 
 /**
@@ -375,17 +465,16 @@ function numRightInRow(fc, lastBegin){
 */
 function statsSession(fc, lastBegin){
 	var sessionPerf=jQuery.grep(fc.history, function(n, i){
-	return n.date>=lastBegin;
+		return n.date>=lastBegin;
 	});
 
 	var numRepititions=sessionPerf.length;
 	var correctArray=jQuery.grep(sessionPerf, function(n, i){
-	return n.correct;
+		return n.correct;
 	});
 	var numCorrect=correctArray.length;
 
-	return {numReps: numRepititions,
-	numCorrect: numCorrect};
+	return {numReps: numRepititions, numCorrect: numCorrect};
 }
 
 /**
@@ -417,6 +506,7 @@ function getDaysAgo(days){
 */
 function getDaysAgoFromDate(dt){
 	var today=new Date();
+	dt=new Date(dt);
 	var diff_date=today-dt;
 	
 	//var num_years = diff_date/31536000000;
@@ -426,7 +516,6 @@ function getDaysAgoFromDate(dt){
 	
 	return num_days;
 }
-
 
 
 function handleNextCardSelect(){
@@ -463,18 +552,18 @@ function handleResults(fc, lastBegin){
 function insertInArray(item, array, position){
 	if(position>array.length){
 		position=array.length;
-	 }
-	 var beginArray=array.slice(0,position);
-	 var endArray=array.slice(position);
-	 beginArray.push(item);
-	 var returnArray=Array.concat(beginArray, endArray);
-	 return returnArray;
-} 
+	}
+	var beginArray=array.slice(0,position);
+	var endArray=array.slice(position);
+	beginArray.push(item);
+	var returnArray=Array.concat(beginArray, endArray);
+	return returnArray;
+}
 
 /**
 * Translates word from sourcelang into destlang.  Adds those and sentence into flashcard
 */
-function translateString(word, sourcelang, destlang, sentence){		
+function translateStringFromPage(word, sourcelang, destlang, sentence){		
 	var translation;
 	console.log(word+sourcelang+destlang);
 	$.getJSON("http://ajax.googleapis.com/ajax/services/language/translate?v=1.0&q=" + word	 +"&langpair="+sourcelang+"%7C"+destlang,
@@ -487,6 +576,29 @@ function translateString(word, sourcelang, destlang, sentence){
 	});
 }
  
+function translateStringForSearch(word, sourcelang, destlang){
+	var translation;
+	
+	$.ajax({
+		url: "http://ajax.googleapis.com/ajax/services/language/translate?v=1.0&q=" + word +"&langpair="+sourcelang+"%7C"+destlang,
+		async: false,
+		dataType: 'json',
+		success: function(data){
+			translation=data.responseData.translatedText.trim().toLowerCase();
+			$("#searchinput",gSlider.contentDocument.body).val(translation);
+		}
+	});
+	/*
+	$.getJSON("http://ajax.googleapis.com/ajax/services/language/translate?v=1.0&q=" + word	 +"&langpair="+sourcelang+"%7C"+destlang,
+	function(data){
+		translation=data.responseData.translatedText.trim().toLowerCase();
+		flashcards[word]=new Flashcard(word,translation,sentence,currentURL);
+		console.log(flashcards);
+		showJetpackNote(word+"="+translation+"\r"+sentence,"Word Added");
+		refreshVocabwords();
+	});*/
+}
+
 /**
 * Jetpack notifications
 */
@@ -520,7 +632,7 @@ function openNewTab(webSite, switchtotab){
 		tab.focus();
 	}
 }
- 
+
 
  /****************************/
 /**
@@ -698,14 +810,59 @@ $.editableFactory = {
 function refreshFavorites(){
 	$("#savedlinksul", gSlider.contentDocument.body).empty();
 	for ( i=0;i<savedsites.length;i++){
-		$("#savedlinksul", gSlider.contentDocument.body).append('<div class="savedlink" id='+savedsites[i].url+'>'+savedsites[i].name+'</div>');
+		var lineItem='<div class="linkdiv" id="'+savedsites[i].name+'"><div style="position:absoulte;overflow:hidden;padding:0;height:15;width:300;top:0;left:0"><span class="savedlink linkUrl" id="'+savedsites[i].url + '">' + savedsites[i].name + '</span></div>';
+		lineItem+='<div class="linkiconzone" style="margin-top:5"><img class="editlink" style="cursor:pointer" src="http://www.langladder.com/img/document-edit-1.png"/><img class="deletelink" style="cursor:pointer" src="http://www.langladder.com/img/trash-1.png"/></div></div>';
+		$("#savedlinksul", gSlider.contentDocument.body).append(lineItem);
 	};
 	$(".savedlink", gSlider.contentDocument.body).click(function(event){
 		var url=$(this).attr('id');
 		openNewTab(url, true);
 	});
+	
+	$('.linkiconzone', gSlider.contentDocument.body).css("visibility","hidden");
+	$(".linkdiv", gSlider.contentDocument.body).hover(function(){
+		$(this).find(".linkiconzone", gSlider.contentDocument.body).css("visibility","visible");;
+	},function(){
+		$(this).find(".linkiconzone", gSlider.contentDocument.body).css("visibility","hidden");
+	});
+	
+	$('.editlink', gSlider.contentDocument.body).click(function(event){
+		console.log("edit this");
+		$(this).parent().parent().find(".savedlink").unbind();
+		$(this).parent().parent().find(".savedlink").editable({onSubmit:onEditLink, context: gSlider.contentDocument.body});
+		$(this).parent().parent().find(".savedlink").triggerHandler("click");
+		//$("#theone").unbind
+	//	unbind('click', aClick)
+		
+	});
+	$('.deletelink', gSlider.contentDocument.body).click(function(event){
+		console.log("delete this");
+		var savedSite=$(this).parent().parent().attr( "id" );
+		
+		for(i=0;i<savedsites.length;i++){
+			if(savedsites[i].name==savedSite){
+				savedsites.splice(i,1);
+				break;
+			}
+		}
+		
+		$(this).parent().parent().hide();
+	});
 }
 
+function onEditLink(content){
+	for(i=0;i<savedsites.length;i++){
+		if(savedsites[i].url==$(this).attr("id")){
+			savedsites[i].name=content.current;
+			break;
+		}
+	}
+	$(this).unbind();
+	$(this).click(function(event){
+		var url=$(this).attr('id');
+		openNewTab(url, true);
+	});
+}
 
 /**
 * 
@@ -753,13 +910,14 @@ function refreshVocabwords(){
 
 	for (i=0;i<keys.length;i++){		
 		var elem=keys[i];
+		
 		var html='<div class="vocabitem" id="'+flashcards[elem].forword+'"><div class="vacabelement"><img class="expandcontract" src="http://www.langladder.com/img/plus-1.png"/>';
-		html=html+'<span class="vocabword">'+ flashcards[elem].forword +'</span><div style="float:right;"><img class="gradeicon" src="http://www.langladder.com/img/circle-1.png" />';
-		html=html+'<img class="trashicon" src="http://www.langladder.com/img/trash-2.png" /></div></div><div class="vocabexpand">';
+		html=html+'<span class="vocabword">'+ flashcards[elem].forword +'</span><div style="float:right"><span class="gradecircle" style="position:absolute; background:red; width:16; height:16; -moz-border-radius: 8px"/>';
+		html=html+'<img class="trashicon" style="position:relative;float:right;left:15;margin-right:32" src="http://www.langladder.com/img/trash-2.png" /></div></div><div class="vocabexpand">';
 		html=html+'<div class="translationword" >'+ flashcards[elem].definition +'</div>';
 		html=html+'<div class="nextscheduled" style="left:180;top:;width:80;position:absolute;"></div>';
-		html=html+'<div class="samplesentence">'+ flashcards[elem].sentence +'</div>';
-		html=html+'<div class="weblink">'+ flashcards[elem].url +' </div></div></div>';
+		html=html+'<div class="samplesentence" style="overflow:hidden">'+ flashcards[elem].sentence +'</div>';
+		html=html+'<div class="weblink linkUrl">'+ flashcards[elem].url +' </div></div></div>';
 		$("#editcarddiv", gSlider.contentDocument.body).append(html);
 	};
 	
@@ -767,6 +925,12 @@ function refreshVocabwords(){
 		 delete flashcards[$(this).parent().parent().attr("id")];
 		 $(this).parent().parent().toggle();//.css("border","9px solid red");
 	});
+	
+	for(var elem in flashcards){
+		var val = getExponentialAverage( flashcards[elem], 0.2);
+		var color = getColorGrade( val );
+		$("#"+flashcards[elem].forword, gSlider.contentDocument.body).find(".gradecircle").css("background",color);
+	}
 	
 	/*
 	var script = $.ajax({
@@ -776,7 +940,7 @@ function refreshVocabwords(){
 	
 	eval(script);
 	*/
-	$('.vocabword', gSlider.contentDocument.body).editable({onSubmit:onEdit1, context: gSlider.contentDocument.body});
+	//$('.vocabword', gSlider.contentDocument.body).editable({onSubmit:onEdit1, context: gSlider.contentDocument.body});
 	$('.translationword', gSlider.contentDocument.body).editable({onSubmit:onEdit1, context: gSlider.contentDocument.body});
 	$('.samplesentence', gSlider.contentDocument.body).editable({onSubmit:onEdit1, context: gSlider.contentDocument.body});
 
@@ -789,6 +953,11 @@ function refreshVocabwords(){
 		else {
 			contractItem($(this).parent().parent());
 		}
+	});
+	
+	$('#weblink', gSlider.contentDocument.body).click(function(){
+		var text=$(this).innerText;
+		openNewTab(text, true);
 	});
 
 	$('#filterselect', gSlider.contentDocument.body).change(function(){
@@ -871,17 +1040,19 @@ jetpack.slideBar.append({
 		//***********Handles functions on gettingstarted tab**********************************
 		$(".learninglink", slider.contentDocument.body).click(function(event){
 			var searchterm=$("#searchinput",slider.contentDocument.body).val();
+			translateStringForSearch(searchterm, settings["nativelang"],settings["learninglang"]);
+			var searchterm=$("#searchinput",slider.contentDocument.body).val();
 			
 			switch($(this).attr( "id" ))
 			{
 				case "websearch":
-					openNewTab("http://www.google.com/search?hl=en&as_q="+searchterm+"&num=30&lr=lang_es&ft=i&as_qdr=all&as_occt=any&safe=images", true);
+					openNewTab("http://www.google.com/search?hl="+settings["nativelang"]+"&as_q="+searchterm+"&num=30&lr=lang_"+settings["learninglang"]+"&ft=i&as_qdr=all&as_occt=any&safe=images", true);
 					break;
 				case "blogsearch":
-					openNewTab("http://blogsearch.google.com/blogsearch?hl=en&num=30&lr=lang_es&ft=i&safe=images&um=1&ie=UTF-8&q="+searchterm+"&sa=N&tab=wb", true);
+					openNewTab("http://blogsearch.google.com/blogsearch?hl="+settings["nativelang"]+"&num=30&lr=lang_"+settings["learninglang"]+"&ft=i&safe=images&um=1&ie=UTF-8&q="+searchterm+"&sa=N&tab=wb", true);
 					break;
 				case "booksearch":
-			  		openNewTab("http://www.google.com/search?hl=en&q="+searchterm+"+site%3Agutenberg.org&lr=lang_es&aq=f", true);
+			  		openNewTab("http://www.google.com/search?hl="+settings["nativelang"]+"&q="+searchterm+"+site%3Agutenberg.org&lr=lang_"+settings["learninglang"]+"&aq=f", true);
 			  		break;
 				case "youtubesearch":
 			  		openNewTab("http://www.google.com", true);
@@ -900,17 +1071,43 @@ jetpack.slideBar.append({
 				this.select();	 
 			}	
 	 	});  
+	
+		
+	
 	 	$('#searchinput', slider.contentDocument.body).blur(function() {  
 			$(this).removeClass("focusField").addClass("idleField");  
 		 	if ($.trim(this.value == '')){	 
 				this.value = (this.defaultValue ? this.defaultValue : '');	 
 			}	
 		});   
-		 
+		
+		$('#searchinput', slider.contentDocument.body).val("search here in " + getLangByCode(settings["learninglang"]) + " or " + getLangByCode(settings["nativelang"]));
+		
+		$("#nativelangselect", slider.contentDocument.body).change(function(event){
+			settings["nativelang"]=countrycodes[$(this).val()];
+			console.log(countrycodes[$(this).val()]);
+			$('#searchinput', slider.contentDocument.body).val("search here in " + getLangByCode(settings["learninglang"]) + " or " + getLangByCode(settings["nativelang"]));
+		});
+		
+		$("#foreignlangselect", slider.contentDocument.body).change(function(){ 
+			settings["learninglang"]=countrycodes[$(this).val()];
+			console.log(countrycodes[$(this).val()]);
+			$('#searchinput', slider.contentDocument.body).val("search here in " + getLangByCode(settings["learninglang"]) + " or " + getLangByCode(settings["nativelang"]));
+		});
+		
 		refreshFavorites();
+		
+	
 		//***********Handles functions on see cards tab**********************************/
 		refreshVocabwords();
-	
+		$('.linkUrl', slider.contentDocument.body).hover(function() {	
+			//console.log("hovering");
+			//$(this).css("font-weight","bold");
+			$(this).css("color","blue");
+		},function(){
+			//$(this).css("font-weight","normal");
+	 		$(this).css("color","black");
+		});
 	
 		//************Handles functions on quiz tab***********************************
 		var lastBegin=new Date();
@@ -919,22 +1116,32 @@ jetpack.slideBar.append({
 		$(".cardclass", slider.contentDocument.body).hide();
 		$(".resultbtn", slider.contentDocument.body).css("visibility","hidden");
 	
-		$("#newquizbtn", slider.contentDocument.body).click(function(event){
+		
+		$("#card", slider.contentDocument.body).one( "click" ,function(event){
 			console.log("#newquizbtn was clicked");
 			
 			lastBegin=new Date();
 			numCorrect=0;
 			numSeen=0;
 			SetUpCard();
+			$("#card", slider.contentDocument.body).css("cursor","default")
 			$(".cardclass", slider.contentDocument.body).show();
-		});
+		})
 		
 		function SetUpCard(){
 			numSeen=numSeen+1;
 			
 			currentCard=getNextCard();
-			//$("#scoreval", slider.contentDocument.body).text("Score: "+numCorrect+" / "+numSeen+ "		 "+(fcqueue.length) +" left" +". " + numRightInRow(fcqueue[0],lastBegin) +" correct");
-			$("#quizword", slider.contentDocument.body).text(currentCard.forword);
+			console.log("0.5 average is " + getExponentialAverage(currentCard, 0.5));
+			console.log("0.25 average is " + getExponentialAverage(currentCard, 0.25));
+			console.log("0.1 average is " + getExponentialAverage(currentCard, 0.1));
+			
+			setUpPerfNumbers(currentCard);
+			
+			if(true)
+				$("#quizword", slider.contentDocument.body).text(currentCard.definition);
+			else
+				$("#quizword", slider.contentDocument.body).text(currentCard.forword);
 		}
 		
 		function FlipCard(){
@@ -974,19 +1181,12 @@ jetpack.slideBar.append({
 		$("#foreignlangselect", slider.contentDocument.body).val(settings["learninglang"]);
 		
 		
-		$("#nativelangselect", slider.contentDocument.body).change(function(event){
-				settings["nativelang"]=countrycodes[$(this).val()];
-			console.log(countrycodes[$(this).val()]);
-		});
-		$("#foreignlangselect", slider.contentDocument.body).change(function(){ 
-		settings["learninglang"]=countrycodes[$(this).val()];
-				console.log(countrycodes[$(this).val()]);
-		});
+	
 			
 		$("#reverseselect", slider.contentDocument.body).val(settings["reversecards"]);
 		$("#reverseselect", slider.contentDocument.body).change(function(event){
-				settings["reversecards"]=$(this).val();
-			console.log($(this).val());
+			settings["reversecards"]=$(this).val();
+			console.log($(this));//.val());
 		});
 		
   },
@@ -1009,22 +1209,25 @@ jetpack.slideBar.append({
 	p#quizword {text-align:center; font-size:25px;}
 
 	
-	#searchinput {	  padding:10px;	 outline:none;	height:36px;  }	 
+	#searchinput {	  padding:5px;	 outline:none;	height:36px;  }	 
 	.focusField {	border:solid 2px #73A6FF;  background:#EFF5FF;	color:#000;	 }	
 	.idleField {  background:#EEE;	 color: #6F6F6F;  border: solid 2px #DFDFDF;  }	 
-	.savedlink { font-size:13px; cursor:pointer; width:100%; height:50; border-style: solid; border-width:1px; border-color:black;}
+	.linkdiv {  border-bottom-style: solid; border-bottom-width:1px; border-bottom-color:black;width:100%; height:35;padding:5}
+	.savedlink { font-size:12px; cursor:pointer; }
 	
-	li.tab:link			  { color: black;  text-decoration:none;  opacity: .7;background: -moz-linear-gradient(top, white, #2B60DE);}
-	li.tab:visited			  { color: black;  text-decoration:none;  opacity: .7;background: -moz-linear-gradient(top, white, #2B60DE);}
-	li.tab:hover			  { color: black; text-decoration:none;	 opacity: 1;background:	 -moz-linear-gradient(top, white, #2B60DE);}
-	li.tab:active			  { color: black; text-decoration:none;	 opacity: 1;background: -moz-linear-gradient(top, white, #2B60DE);}
-	li.savedlink:link			  { color: black;  text-decoration:none;  opacity: .7;color: #2B60DE;}
-	li.savedlink:visited			  { color: black;  text-decoration:none;  opacity: .7;color: #2B60DE;}
-	li.savedlink:hover			  { color: black; text-decoration:none;	 opacity: 1;color:	#2B60DE;}
-	li.savedlink:active			  { color: black; text-decoration:none;	 opacity: 1;color: #2B60DE;}	
+	
+	li.tab:link				{ color: black;  text-decoration:none;  opacity: .7 ; background: -moz-linear-gradient(top, white, #2B60DE);}
+	li.tab:visited			{ color: black;  text-decoration:none;  opacity: .7;background: -moz-linear-gradient(top, white, #2B60DE);}
+	li.tab:hover			{ color: black; text-decoration:none;	 opacity: 1;background:	 -moz-linear-gradient(top, white, #2B60DE);}
+	li.tab:active			{ color: black; text-decoration:none;	 opacity: 1;background: -moz-linear-gradient(top, white, #2B60DE);}
+	li.savedlink:link		{ color: black;  text-decoration:none;  opacity: .7;color: #2B60DE;}
+	li.savedlink:visited	{ color: black;  text-decoration:none;  opacity: .7;color: #2B60DE;}
+	li.savedlink:hover		{ color: black; text-decoration:none;	 opacity: 1;color:	#2B60DE;}
+	li.savedlink:active		{ color: black; text-decoration:none;	 opacity: 1;color: #2B60DE;}	
+
 	
 	/*new part*/
-	div.vocabitem {position: absolute1;width:310px;height:50;border-width:1px;border-color:gray;border-style:solid; font-size:18; background: -moz-linear-gradient(top, white, grey);  }
+	div.vocabitem {position1: absolute;width:310px;height:50;border-width:1px;border-color:gray;border-style:solid; font-size:18; background: -moz-linear-gradient(top, white, grey);  }
 	.vacabelement {margin-top:14;}
 	img {vertical-align: top; } 
 	.trashicon {visibility:visible;margin-right:15;cursor:pointer;}
@@ -1033,8 +1236,12 @@ jetpack.slideBar.append({
 	.translationword {font-style: italic; left:0px;top:0px;width:80;position:absolute;}
 	.vocabword {font-weight:bold;padding:16;}
 	.nextscheduled {font-size:10px;}
-	.samplesentence {font-size:13px;top:30;width:250;height:40;position:absolute;}
+	.samplesentence {font-size:13px;top:30;width:250;height:47;position:absolute;}
 	.weblink {font-size:10px;top:95;width:270;position:absolute;}
+	.linkUrl {cursor:pointer}
+	
+	/*Quiz section*/
+	.perfpic {display1:none}
 	
 	]]></style>
 	<body>
@@ -1043,8 +1250,8 @@ jetpack.slideBar.append({
 		 	<table class="tabtable">
 				<tr>
 					<td><li class="tab" id="startingtab"><span> Starting Out</span></li></td>
-				 	<td><li class=" tab" id="wordedittab"><span>See Cards</span></li></td>
-				 	<td><li class=" tab" id="quiztab"> <span>My Quiz</span></li></td>
+				 	<td><li class=" tab" id="wordedittab"><span>Organize</span></li></td>
+				 	<td><li class=" tab" id="quiztab"> <span>Review</span></li></td>
 				</tr>
 			</table>
 		</div>
@@ -1067,8 +1274,7 @@ jetpack.slideBar.append({
 
 				<div style="float:left;border: solid; border-width:1px; margin-left:10; padding-top:5px; padding-bottom:5px; border-color:black; margin-top:10; background: -moz-linear-gradient(top, white, #F2F2F2); text-align:center;width:310px; font-size:17px;font-weight:bold;">Reading Material Search</div><br/>
 				<div id="learningpanel" style="background:white;margin-left:10;padding:0;width:310px; height:140px; border-style: solid; border-width:1px; border-color:solid gray;font-size:17px;font-weight:bold">
-					<input id="searchinput" name="searchinput" type="text" style="width:290; margin-top:20;margin-left:10;margin-right:10;margin-bottom:10"	 />
-
+					<input id="searchinput" name="searchinput" type="text" style="width:290; margin-top:20;margin-left:10;margin-right:10;margin-bottom:10"	value="search here" />
 					<ul class="btngroup">
 					<li class="btn learninglink" id="booksearch">Search Books</li>
 					<li class="btn learninglink" id="blogsearch">Search Blogs</li>
@@ -1077,7 +1283,7 @@ jetpack.slideBar.append({
 				</div>
 
 				<div style="float:left;border: solid; border-width:1px; margin-left:10; padding-top:5px; padding-bottom:5px; border-color:black; margin-top:10; background: -moz-linear-gradient(top, white, #F2F2F2); text-align:center;width:310px; font-size:17px;font-weight:bold;">Saved Material</div><br/>
-				<div id="learningpanel" style="background:white;margin-left:10;padding:0;width:310px; height:330px; border-style: solid; border-width:1px; border-color:solid gray;overflow:auto;">
+				<div id="learningpanel" style="background:white;margin-left:10;padding:0;width:310px; height:330px; border-style: solid; border-width:1px; border-color:solid gray;overflow-y:auto;overflow-x:hidden;">
 					<ul id="savedlinksul" style="list-style-type:disc:display-type:block">
 						<li class="savedlink" id="booksearch">Link 1</li>
 					
@@ -1086,24 +1292,34 @@ jetpack.slideBar.append({
 			</div>
 
 			<div class="pane" id="editcards">
-				<select id="filterselect" style="position:absolute;left:15px;top:15px">
+				<div id="editcarddiv" style="position:absolute;margin-left:10;top:20px;width:310px;height:500px;border-width:1px;border-color:black;border-style:solid;overflow-y:auto;overflow-x:hidden;">
+				</div>
+				<select id="filterselect" style="position:absolute;left:15px;top:550">
 					<option value="en">No Filter</option>
 					<option value="es">Website</option>
 					<option value="fr">Performance</option>
 			   </select>
-				<input style="position:absolute;right:15;top:15;" type="button" value="Create New Quiz"/>
-				<div class="filterpanel" style="position:absolute; width:310px; top:50; height:230px; border-width:1px; border-color:black; border-style:solid; margin-left:10;">
-				</div>
-				<div id="editcarddiv" style="position:absolute;margin-left:10;top:290px;width:310px;height:400px;border-width:1px;border-color:black;border-style:solid;overflow-y:auto;overflow-x:hidden;">
+				<input style="position:absolute;right:15;top:550;" type="button" value="Create New Quiz"/>
+				<div class="filterpanel" style="position:absolute; width:310px; top:600; height:130px; border-width:1px; border-color:black; border-style:solid; margin-left:10;">
 				</div>
 			</div>
 
 			<div class="pane" id="quizpane"	>
-				<div id="newquizbtn" class="btn" style="position:absolute;width:120px;top:30">New Quiz</div> 
-				<div class="scoretab" id="scoreval" style="top:30">Score:</div>	 
-				<div id="card" style="background: white ;width:270px;position:absolute;top:150;left:30;border-width:1px;border-color:black;border-style:solid;height:150px;">
-					<div class="cardclass"	 style="position:absolute;top:45;width:270;left:0;text-align:center;">	 
-						<h2 id="quizword">Foreign Word</h2>
+				<div id="perfbox" class="cardclass" style="position:absolute;padding:5;left:55;top:50;width:215;background:white;-moz-box-shadow: black 2px 2px 4px;">
+					<img class="perfpic" id="pp1" src="http://www.langladder.com/img/thumbs-down-1.png"/>
+					<img class="perfpic" id="pp2" src="http://www.langladder.com/img/thumbs-down-1.png"/>
+					<img class="perfpic" id="pp3" src="http://www.langladder.com/img/thumbs-down-1.png"/>
+					<img class="perfpic" id="pp4" src="http://www.langladder.com/img/thumbs-down-1.png"/>
+					<img class="perfpic" id="pp5" src="http://www.langladder.com/img/thumbs-down-1.png"/>
+					<img class="perfpic" id="pp6" src="http://www.langladder.com/img/thumbs-down-1.png"/>
+					<img class="perfpic" id="pp7" src="http://www.langladder.com/img/thumbs-down-1.png"/>
+					<img class="perfpic" id="pp8" src="http://www.langladder.com/img/thumbs-down-1.png"/>
+					<img class="perfpic" id="pp9" src="http://www.langladder.com/img/thumbs-down-1.png"/>
+					<img class="perfpic" id="pp10" src="http://www.langladder.com/img/thumbs-down-1.png"/>
+				</div>
+				<div id="card" style="background: white; cursor:pointer; width:270px;position:absolute;top:150;left:30;border-width:1px;border-color:black;border-style:solid;height:150px; -moz-box-shadow: black 2px 2px 4px;">
+					<div style="position:absolute;top:60;width:270;left:0;text-align:center;">	 
+						<h2 id="quizword">Click to begin</h2>
 					</div>
 				</div>
 				<table class="cardclass" style="position:absolute; width:85%; left:10; top:400; magin:30">
