@@ -1208,7 +1208,7 @@ jetpack.slideBar.append({
 	ul.btngroup {display:block; list-style-type:none;margin:0;padding:0; margin:7; width:330px}
 	li.tab {display:block;float:left;display:inline; background: -moz-linear-gradient(top, white, #F2F2F2); }//, #F8F0F8
 	div#card { }
-	p#quizword {text-align:center; font-size:25px;}
+	h2#quizword {text-align:center; font-size:25px;}
 
 	
 	#searchinput {	  padding:5px;	 outline:none;	height:36px;  }	 
@@ -1303,30 +1303,37 @@ jetpack.slideBar.append({
 			</div>
 
 			<div class="pane" id="quizpane"	>
-				<div id="perfbox" class="cardclass" style="position:absolute;padding:5;left:55;top:50;width:215; height:20; border-width:1px; border-color:black; border-style:solid; background:white;-moz-box-shadow: black 2px 2px 4px;">
-					<img class="perfpic" id="pp1" src="http://www.langladder.com/img/thumbs-down-1.png"/>
-					<img class="perfpic" id="pp2" src="http://www.langladder.com/img/thumbs-down-1.png"/>
-					<img class="perfpic" id="pp3" src="http://www.langladder.com/img/thumbs-down-1.png"/>
-					<img class="perfpic" id="pp4" src="http://www.langladder.com/img/thumbs-down-1.png"/>
-					<img class="perfpic" id="pp5" src="http://www.langladder.com/img/thumbs-down-1.png"/>
-					<img class="perfpic" id="pp6" src="http://www.langladder.com/img/thumbs-down-1.png"/>
-					<img class="perfpic" id="pp7" src="http://www.langladder.com/img/thumbs-down-1.png"/>
-					<img class="perfpic" id="pp8" src="http://www.langladder.com/img/thumbs-down-1.png"/>
-					<img class="perfpic" id="pp9" src="http://www.langladder.com/img/thumbs-down-1.png"/>
-					<img class="perfpic" id="pp10" src="http://www.langladder.com/img/thumbs-down-1.png"/>
-				</div>
-				<div id="card" style="background: white; cursor:pointer; width:270px;position:absolute;top:150;left:30;border-width:1px;border-color:black;border-style:solid;height:150px; -moz-box-shadow: black 2px 2px 4px;">
-					<div style="position:absolute;top:60;width:270;left:0;text-align:center;">	 
-						<h2 id="quizword">Click to begin</h2>
+				<div style="position:absolute;border: solid; top:10;left:0; border-width:2px; margin-left:10; padding-top:5px; padding-bottom:5px; border-color:black; background: -moz-linear-gradient(top, white, grey); text-align:center;width:310px; font-size:17px;font-weight:bold;">Review Words</div><br/>
+				<div style="position:absolute; top:43; left:10; background:#8BB381; height:340; border-width:1px; border-color:black; border-style:solid; width:310">
+					<div id="perfbox" class="cardclass" style="position:absolute;padding:5;left:20;top:210;width:260; height:20; border-width:1px; border-color:black; border-style:solid; background:white;-moz-box-shadow: black 2px 2px 4px;">
+						<table style="width:100%">
+						<tr style="width:10%">
+						<td><img class="perfpic" id="pp1" src="http://www.langladder.com/img/thumbs-down-1.png"/></td>
+						<td><img class="perfpic" id="pp2" src="http://www.langladder.com/img/thumbs-down-1.png"/></td>
+						<td><img class="perfpic" id="pp3" src="http://www.langladder.com/img/thumbs-down-1.png"/></td>
+						<td><img class="perfpic" id="pp4" src="http://www.langladder.com/img/thumbs-down-1.png"/></td>
+						<td><img class="perfpic" id="pp5" src="http://www.langladder.com/img/thumbs-down-1.png"/></td>
+						<td><img class="perfpic" id="pp6" src="http://www.langladder.com/img/thumbs-down-1.png"/></td>
+						<td><img class="perfpic" id="pp7" src="http://www.langladder.com/img/thumbs-down-1.png"/></td>
+						<td><img class="perfpic" id="pp8" src="http://www.langladder.com/img/thumbs-down-1.png"/></td>
+						<td><img class="perfpic" id="pp9" src="http://www.langladder.com/img/thumbs-down-1.png"/></td>
+						<td><img class="perfpic" id="pp10" src="http://www.langladder.com/img/thumbs-down-1.png"/></td>
+						</tr>
+						</table>
 					</div>
+					<div id="card" style="background: white; cursor:pointer; width:270px;position:absolute;top:30;left:20;border-width:1px;border-color:black;border-style:solid;height:150px; -moz-box-shadow: black 2px 2px 4px;">
+						<div style="position:absolute;top:60;width:270;left:0;text-align:center;">	 
+							<h2 id="quizword">Click to begin</h2>
+						</div>
+					</div>
+					<table class="cardclass" style="position:absolute; width:85%; left:0; top:280;">
+						<tr>
+							<td><li class=" btn resultbtn" id="correctbtn">Correct</li></td>
+							<td><li class=" btn" id="flipbtn" >Flip</li></td>
+							<td><li class=" btn resultbtn" id="inccorrectbtn">Incorrect</li></td>
+						</tr>
+					</table>
 				</div>
-				<table class="cardclass" style="position:absolute; width:85%; left:10; top:400; magin:30">
-					<tr>
-						<td><li class=" btn resultbtn" id="correctbtn">Correct</li></td>
-						<td><li class=" btn" id="flipbtn" >Flip</li></td>
-						<td><li class=" btn resultbtn" id="inccorrectbtn">Incorrect</li></td>
-					</tr>
-				</table>
 			</div>
 			
 			<div id="settingpane" class="pane" >
